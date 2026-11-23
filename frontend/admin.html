@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeadPilot Dashboard</title>
+  <meta name="description" content="Dealer dashboard: leads, scores, bookings and follow-ups.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap" style="max-width:none">
+    <a class="logo" href="./"><span class="logo-mark">L</span>LeadPilot <span class="hint" style="font-weight:500">Dealer dashboard</span></a>
+    <nav class="nav">
+      <span class="hint" id="biz-name"></span>
+      <a href="./" class="hide-sm">Customer site</a>
+      <button class="btn small" id="logout" style="display:none" onclick="logout()">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<div id="login-view">
+  <form class="card login" id="login-form">
+    <h2 style="margin-top:0">Dealer login</h2>
+    <p class="hint">Each dealer only sees its own leads, bookings and follow-ups.</p>
+    <div class="field"><label for="token">Admin token</label><input id="token" type="password" required placeholder="Your dealer token"></div>
+    <button class="btn primary" style="width:100%;justify-content:center">Log in</button>
+    <p class="hint" style="margin-bottom:0">Demo tokens: <code>skyline-demo</code> (Skyline Realty), <code>autohub-demo</code> (AutoHub Motors), <code>admin-demo</code> (all).</p>
+    <p class="hint" id="login-err" style="color:var(--hot)"></p>
+  </form>
+</div>
+
+<div class="admin-layout" id="app-view" style="display:none">
+  <aside class="side" id="side">
+    <button data-v="overview" class="on">📊 Overview</button>
+    <button data-v="leads">👥 Leads</button>
+    <button data-v="bookings">📅 Bookings</button>
+    <button data-v="followups">🔔 Follow-ups <span class="badge" id="fu-badge" style="display:none"></span></button>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="drawer-bg" id="drawer-bg" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

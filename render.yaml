@@ -1,0 +1,18 @@
+# Alternative to Hugging Face: Render Blueprint (New > Blueprint > pick this repo).
+services:
+  - type: web
+    name: leadpilot-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_TOKENS
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: "*"

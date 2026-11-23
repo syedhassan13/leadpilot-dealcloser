@@ -1,0 +1,20 @@
+# Daily: wake the follow-up agent (drafts nudges for quiet leads; a human approves them in the dashboard).
+# Also pings /health every few hours so the free Space stays warm.
+# Needs repo secrets: API_URL (e.g. https://your-name-leadpilot.hf.space) and CRON_SECRET.
+name: Follow-ups and keep-alive
+on:
+  schedule:
+    - cron: "0 5 * * *"        # 10:00 Pakistan time: draft follow-ups
+    - cron: "0 */6 * * *"      # keep-alive
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        run: curl -fsS --retry 3 --max-time 120 "${{ secrets.API_URL }}/health"
+      - name: Draft follow-ups
+        if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -fsS -X POST --max-time 300 -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" "${{ secrets.API_URL }}/cron/followups"

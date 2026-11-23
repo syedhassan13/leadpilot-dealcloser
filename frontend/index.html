@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeadPilot</title>
+  <meta name="description" content="Find your next home or car in Islamabad. Get a reply in under a minute and book a site visit or test drive.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="logo" href="./"><span class="logo-mark">L</span>LeadPilot</a>
+    <nav class="nav">
+      <a href="#listings">Listings</a>
+      <a href="#how" class="hide-sm">How it works</a>
+      <a href="#" id="nav-bookings">My bookings</a>
+      <a href="admin.html" class="btn small">Dealer login</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <span class="pill">⚡ Replies in under a minute, 24/7</span>
+      <h1>Find your next home or car in Islamabad.</h1>
+      <p>Tell us your budget and timeline. Our AI assistant shortlists matching properties from Skyline Realty and cars
+        from AutoHub Motors, answers financing questions and books your site visit or test drive.</p>
+      <div class="row">
+        <button class="btn primary" onclick="openChat()">💬 Chat now</button>
+        <a class="btn" href="#listings">Browse listings</a>
+      </div>
+      <div class="hero-stats">
+        <div><b id="stat-props">8</b><span>Properties</span></div>
+        <div><b id="stat-cars">8</b><span>Cars</span></div>
+        <div><b>&lt; 60 s</b><span>Reply time</span></div>
+      </div>
+    </div>
+
+    <form class="card form-card" id="lead-form">
+      <h3>Get a call back in under a minute</h3>
+      <p class="sub">Our assistant replies instantly. No spam, ever.</p>
+      <div class="field">
+        <label>I'm looking for</label>
+        <div class="seg" id="interest-seg">
+          <button type="button" data-v="property" class="on">🏠 Property</button>
+          <button type="button" data-v="car">🚗 Car</button>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="f-name">Name</label><input id="f-name" required maxlength="80" placeholder="Ali Khan"></div>
+        <div class="field"><label for="f-phone">Phone / WhatsApp</label><input id="f-phone" required maxlength="30" placeholder="0300 1234567"></div>
+      </div>
+      <div class="field"><label for="f-msg">What do you need? (optional)</label>
+        <textarea id="f-msg" rows="2" maxlength="1000" placeholder="e.g. 3 bed house in DHA, budget 2 crore, buying in 2 months"></textarea></div>
+      <button class="btn primary" style="width:100%;justify-content:center" id="lead-submit">Get my instant reply</button>
+    </form>
+  </div>
+
+  <section id="listings">
+    <div class="section-head">
+      <h2>Available now</h2>
+      <div class="tabs" id="tabs">
+        <button data-c="" class="on">All</button>
+        <button data-c="property">🏠 Property</button>
+        <button data-c="car">🚗 Cars</button>
+      </div>
+    </div>
+    <div class="listings" id="listing-grid"><div class="empty">Loading listings…</div></div>
+  </section>
+
+  <section id="how">
+    <div class="section-head"><h2>How it works</h2></div>
+    <div class="how">
+      <div class="card"><span class="step-no">1</span><b>Tell us what you want</b><p>Fill the form or start a chat. You get a reply within a minute.</p></div>
+      <div class="card"><span class="step-no">2</span><b>Get a shortlist</b><p>The assistant matches your budget, timeline and area to real listings.</p></div>
+      <div class="card"><span class="step-no">3</span><b>Book a visit</b><p>Pick a slot for a site visit or test drive. We confirm before booking.</p></div>
+      <div class="card"><span class="step-no">4</span><b>We stay in touch</b><p>Busy? We'll follow up on day 1, 3 and 7 so you never miss a deal.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">LeadPilot, DealCloser track. Demo data only: listings, prices and businesses are fictional.</div></footer>
+
+<button class="btn primary chat-fab" id="chat-fab" onclick="openChat()">💬 Chat with LeadPilot</button>
+
+<div class="chat card" id="chat" aria-live="polite">
+  <div class="chat-head">
+    <span class="logo-mark">L</span>
+    <div class="who"><b>LeadPilot assistant</b><span id="chat-who"><span class="dot"></span>Online</span></div>
+    <button class="btn small ghost" onclick="closeChat()" aria-label="Close chat">✕</button>
+  </div>
+  <div class="chat-tools">
+    <button class="btn small" onclick="newThread()" title="Start a new conversation (long-term memory remembers you)">＋ New chat</button>
+    <button class="btn small" onclick="showBookings()">📅 My bookings</button>
+    <button class="btn small" onclick="switchUser()" title="Demo: become a different customer">👤 Switch user</button>
+  </div>
+  <div class="msgs" id="msgs"></div>
+  <div class="suggest" id="suggest">
+    <button>I want a 3 bed house, budget 2 crore</button>
+    <button>Cars under 50 lakh?</button>
+    <button>Do you offer car financing?</button>
+  </div>
+  <form class="composer" id="composer">
+    <input id="chat-input" autocomplete="off" maxlength="2000" placeholder="Type your message…">
+    <button class="btn primary" id="send-btn">Send</button>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
