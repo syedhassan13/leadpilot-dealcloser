@@ -10,7 +10,7 @@ with drafts a human approves.
 |---|---|
 | Website (customer + dealer dashboard) | https://leadpilot-hassans-team1.vercel.app (dashboard: [/admin](https://leadpilot-hassans-team1.vercel.app/admin)) |
 | Agent API base URL | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health), [/docs](https://leadpilot-api-hhys.onrender.com/docs)) |
-| Demo video | `<YouTube unlisted / Drive link>` |
+| Demo video | https://www.youtube.com/watch?v=6IJ6BwGFaU8 |
 
 ![Demo](docs/demo.gif)
 
