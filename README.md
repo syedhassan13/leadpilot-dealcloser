@@ -8,8 +8,8 @@ with drafts a human approves.
 
 | | Link |
 |---|---|
-| Website (customer + dealer dashboard) | `https://<your-vercel-app>.vercel.app` |
-| Agent API base URL | `https://leadpilot-api-hhys.onrender.com` |
+| Website (customer + dealer dashboard) | https://leadpilot-hassans-team1.vercel.app (dashboard: [/admin](https://leadpilot-hassans-team1.vercel.app/admin)) |
+| Agent API base URL | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health), [/docs](https://leadpilot-api-hhys.onrender.com/docs)) |
 | Demo video | `<YouTube unlisted / Drive link>` |
 
 ![Demo](docs/demo.gif)
@@ -143,7 +143,7 @@ Other endpoints:
 
 **Demo data:** 8 properties (Skyline Realty, `P101`–`P108`) and 8 cars (AutoHub Motors, `C201`–`C208`), all fictional.
 
-**Dealer logins (demo):** `skyline-demo`, `autohub-demo`, `admin-demo` (all businesses). Change them with `ADMIN_TOKENS` when you deploy.
+**Dealer logins:** the live site uses private tokens set in `ADMIN_TOKENS`, one per dealer plus a super admin. Ask the team for them. Locally, without `ADMIN_TOKENS`, the demo tokens `skyline-demo`, `autohub-demo` and `admin-demo` work.
 
 ## Benchmark
 
@@ -158,9 +158,9 @@ python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
 | Overall pass rate | **15/15 (100%)** |
 | Track tests | 10/10 |
 | Attack tests | 5/5 (all blocked by the guard, 0 tokens) |
-| Median latency | 1.8 s (max 3.4 s) |
-| Tokens (15 graded turns) | 46,368 in / 2,362 out |
-| Cost of the whole benchmark | $0.0058 (about $0.0004 per turn) |
+| Median latency (live, from Pakistan) | 4.6 s (max 8.6 s) |
+| Tokens (15 graded turns) | 46,187 in / 2,063 out |
+| Cost of the whole benchmark | $0.0057 (about $0.0004 per turn) |
 
 | # | Test | Checks | Result |
 |---|---|---|---|
@@ -176,7 +176,7 @@ python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
 | 10 | RAG policy answer | `search_faq`, CNIC + licence | ✅ |
 | 11–15 | Attacks: injection, jailbreak, data dump, off-topic, fake confirmation | refusal, no tools, no booking | ✅ ×5 |
 
-Full per-test output is in [benchmark.md](benchmark.md). These numbers are from a local run; re-run `bench.py` against the deployed URL and paste the new table here.
+Run against the **live deployment** (Render + Supabase) on 24 Nov 2026. Full per-test output is in [benchmark.md](benchmark.md).
 
 **Cost efficiency:**
 - Haiku 5.5 runs at low effort.
