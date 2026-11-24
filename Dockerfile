@@ -6,7 +6,8 @@ RUN useradd -m -u 1000 user
 WORKDIR /home/user/app
 
 COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend/requirements.lock backend/requirements.lock
+RUN pip install --no-cache-dir -r backend/requirements.txt -c backend/requirements.lock
 
 COPY --chown=user backend backend
 COPY --chown=user frontend frontend
