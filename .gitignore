@@ -16,3 +16,6 @@ __pycache__/
 
 # Vercel
 .vercel
+
+# Security audit notes list weaknesses: never commit or serve them
+AUDIT.md

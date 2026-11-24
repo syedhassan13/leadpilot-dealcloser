@@ -1,18 +1,23 @@
-# Alternative to Hugging Face: Render Blueprint (New > Blueprint > pick this repo).
+# Render Blueprint (New > Blueprint > pick this repo).
 services:
   - type: web
     name: leadpilot-api
     runtime: docker
     plan: free
+    region: singapore
     healthCheckPath: /health
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: DATABASE_URL
         sync: false
-      - key: ADMIN_TOKENS
+      - key: ADMIN_TOKENS          # long random dealer keys, e.g. skyline:<random>,autohub:<random>,*:<random>
         sync: false
+      - key: ALLOWED_ORIGINS       # your exact website origin(s), e.g. https://leadpilot-hassans-team1.vercel.app
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
       - key: CRON_SECRET
         generateValue: true
-      - key: ALLOWED_ORIGINS
-        value: "*"
+      - key: ENV
+        value: production

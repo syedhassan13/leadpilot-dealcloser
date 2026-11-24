@@ -9,7 +9,7 @@ with drafts a human approves.
 | | Link |
 |---|---|
 | Website (customer + dealer dashboard) | https://leadpilot-hassans-team1.vercel.app (dashboard: [/admin](https://leadpilot-hassans-team1.vercel.app/admin)) |
-| Agent API base URL | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health), [/docs](https://leadpilot-api-hhys.onrender.com/docs)) |
+| Agent API base URL | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health)) |
 | Demo video | https://www.youtube.com/watch?v=6IJ6BwGFaU8 |
 
 ![Demo](docs/demo.gif)
@@ -112,7 +112,9 @@ flowchart LR
 1. The thread key includes the user id with a length prefix, so user `a:b` + thread `c` can never open user `a` + thread `b:c`. Guessing another user's `thread_id` gives you an empty, new conversation.
 2. Every tool reads the customer from `runtime.context.user_id`, which the server sets from the request. The model never passes a user id, so no prompt can make a tool read someone else's data.
 3. Long-term memory is namespaced by `user_id`.
-4. Dealers are isolated too: each admin token is bound to one business (Skyline Realty or AutoHub Motors). Every admin query is filtered by that business, and opening another dealer's lead returns 404.
+4. Website customers get a random id (`lp_` plus 32 hex characters) and a **signed token** from the server. Reading their chats, bookings or profile, deleting their data, and chatting as them all require that token, so knowing someone's id is not enough.
+5. Dealers are isolated too: each dealer key is bound to one business (Skyline Realty or AutoHub Motors). Every admin query is filtered by that business, and opening another dealer's lead returns 404.
+6. In Supabase, row-level security is on for every table and the public `anon`/`authenticated` roles have no access, so the database can only be reached through our server.
 
 Everything persists in Postgres, so memory survives restarts and redeploys.
 
@@ -126,6 +128,23 @@ Everything persists in Postgres, so memory survives restarts and redeploys.
 - **PII:** card numbers are redacted and CNICs are masked before reaching the model.
 - **Reliability:** tool errors are turned into messages, model and tool call limits are set, `/chat` always returns valid JSON, and the SDK retries API errors.
 
+## Security (pre-launch audit)
+
+We ran an 85-check pre-launch security audit (OWASP Top 10 2025 and the OWASP Top 10 for LLM apps) and fixed every failure. `python security_tests.py <API_URL> <dealer key>` re-checks 31 of the fixes in about a minute.
+
+| Area | What protects it |
+|---|---|
+| Database | RLS on every Supabase table; `anon`/`authenticated` revoked; parameterised queries only |
+| Customers | Server-issued random ids + HMAC-signed tokens on every customer endpoint; "Delete my data" in the chat |
+| Dealers | Dealer key → signed 8-hour session (revocable on logout); 10 failed logins per IP per 15 min, then locked |
+| Abuse and cost | Per-user and per-IP limits on `/chat` (stored in Postgres, so they survive restarts), a daily AI cap, 5 leads per IP per 10 min, honeypot + fill-time bot check, max 20 follow-up drafts per run |
+| Input/output | Strict id/phone/message formats, all output escaped, no inline handlers, API address fixed (no `?api=` override) |
+| Configuration | `/docs` and `/openapi.json` off in production, CORS limited to our website, no demo keys in production, failed logins and admin actions logged |
+| Privacy | [Privacy policy](frontend/privacy.html), [terms](frontend/terms.html), [security.txt](frontend/.well-known/security.txt), and data deletion for customers and dealers |
+| Dependencies | `pip-audit`: no known vulnerabilities; every version pinned in `backend/requirements.lock` |
+
+**Accepted risk:** the assignment requires `POST /chat` to be open without login. Ids our website issues (`lp_…`) still need their token, but any other id can be used by anyone who knows it. That is how the grader calls the API.
+
 ## Agent API (used for grading)
 
 ```bash
@@ -137,13 +156,13 @@ curl "$API/health"   # ok
 ```
 
 Other endpoints:
-- **Website:** `GET /listings`, `POST /leads` (instant first reply), `GET /customer/{user_id}/threads/{thread_id}`, `GET /customer/{user_id}/bookings`
-- **Dashboard** (header `X-Admin-Token`): `/admin/stats`, `/admin/leads`, `/admin/leads/{id}`, `/admin/bookings`, `/admin/followups`, `POST /admin/followups/run`, `POST /admin/followups/{id}/approve`
-- **Docs:** interactive docs at `/docs`
+- **Website:** `GET /listings`, `POST /customer/session` (new customer id + token), `POST /leads` (instant first reply), and with header `X-User-Token`: `GET /customer/{user_id}/threads/{thread_id}`, `GET /customer/{user_id}/bookings`, `DELETE /customer/{user_id}`
+- **Dashboard:** `POST /admin/login` (dealer key → session), then header `Authorization: Bearer <session>`: `/admin/stats`, `/admin/leads`, `/admin/leads/{id}` (GET, DELETE), `/admin/bookings`, `/admin/followups`, `POST /admin/followups/run`, `POST /admin/followups/{id}/approve`, `POST /admin/logout`
+- **Docs:** interactive docs at `/docs` in local development only (turned off in production)
 
 **Demo data:** 8 properties (Skyline Realty, `P101`–`P108`) and 8 cars (AutoHub Motors, `C201`–`C208`), all fictional.
 
-**Dealer logins:** the live site uses private tokens set in `ADMIN_TOKENS`, one per dealer plus a super admin. Ask the team for them. Locally, without `ADMIN_TOKENS`, the demo tokens `skyline-demo`, `autohub-demo` and `admin-demo` work.
+**Dealer logins:** the live site uses private dealer keys set in `ADMIN_TOKENS`, one per dealer plus a super admin. Ask the team for them. The demo keys `skyline-demo`, `autohub-demo` and `admin-demo` only work in local development when `ADMIN_TOKENS` is not set.
 
 ## Benchmark
 
@@ -204,7 +223,7 @@ uvicorn app.main:app --port 7860
 
 - Website: http://localhost:7860/ui/
 - Dashboard: http://localhost:7860/ui/admin.html
-- API docs: http://localhost:7860/docs
+- API docs: http://localhost:7860/docs (development only)
 
 To run the benchmark, use `python bench.py` from the repo root.
 
@@ -215,7 +234,7 @@ To run the benchmark, use `python bench.py` from the repo root.
    - Tables are created automatically on first start.
 2. **Agent API (Render):**
    - Go to render.com, then **New**, then **Blueprint**, and pick this repo. It reads `render.yaml` (a free Docker web service).
-   - Fill in the secrets it asks for: `ANTHROPIC_API_KEY`, `DATABASE_URL` (the Supabase URI) and `ADMIN_TOKENS`. `CRON_SECRET` is generated automatically.
+   - Fill in the secrets it asks for: `ANTHROPIC_API_KEY`, `DATABASE_URL` (the Supabase URI), `ADMIN_TOKENS` (long random keys) and `ALLOWED_ORIGINS` (your Vercel URL). `CRON_SECRET` and `SESSION_SECRET` are generated automatically. The server refuses to start in production without `SESSION_SECRET`.
    - **Check it:** `https://leadpilot-api-hhys.onrender.com/health` should return `ok`.
    - **Keep it awake:** the free tier sleeps after 15 minutes idle, so the "Follow-ups and keep-alive" workflow pings `/health` every 10 minutes (step 4).
    - *Alternative:* a Hugging Face Space. Add `HF_TOKEN` and `HF_SPACE` secrets, then run the "Deploy API to Hugging Face" workflow manually.
@@ -234,6 +253,7 @@ backend/app/
   agent.py       Closer agent: create_agent, prompt, middleware
   tools.py       8 tools (inventory, availability, booking, lead qualification, RAG)
   guard.py       Safety guard rules
+  security.py    Rate limits, customer tokens, dealer sessions, security event log
   followups.py   Follow-up agent + human approval
   rag.py         Knowledge base vector store
   db.py, seed.py Tables and demo data
@@ -243,4 +263,4 @@ tests.json, bench.py Benchmark
 Dockerfile, render.yaml (Render), .github/workflows/
 ```
 
-No API keys are committed: secrets live in `.env` locally (git-ignored) and in platform secrets when deployed.
+No API keys are committed: secrets live in `.env` locally (git-ignored) and in platform secrets when deployed. To report a security issue, see [SECURITY.md](SECURITY.md).
