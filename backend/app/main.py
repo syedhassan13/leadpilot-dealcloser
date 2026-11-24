@@ -59,6 +59,11 @@ SECURITY_HEADERS = {
 }
 
 
+SITE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+            "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+            "base-uri 'self'; form-action 'self'; object-src 'none'")
+
+
 @app.middleware("http")
 async def headers_and_timing(request: Request, call_next):
     """Security headers on every response, no caching of private data, and one log line per request."""
@@ -71,6 +76,11 @@ async def headers_and_timing(request: Request, call_next):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if request.url.path.startswith(("/admin", "/customer", "/chat", "/leads")):
         response.headers["Cache-Control"] = "no-store"
+    content_type = response.headers.get("content-type", "")
+    if "text/html" in content_type:
+        response.headers.setdefault("Content-Security-Policy", SITE_CSP)   # dev website: same policy as Vercel
+    elif "json" in content_type:
+        response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
     response.headers["X-Request-Id"] = request_id
     if request.url.path != "/health":
         log.info("%s %s %s %dms id=%s", request.method, request.url.path.split("/customer/")[0] or "/",
