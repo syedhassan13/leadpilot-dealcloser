@@ -1,5 +1,7 @@
 import { request, health, ApiError } from "./api.js";
-import { $, $$, esc, toast, reveal, headerMenu, liveStatus, formTimer, busy } from "./ui.js";
+import { $, $$, esc, toast, reveal, headerMenu, liveStatus, formTimer, busy, themeToggle } from "./ui.js";
+
+themeToggle();
 
 headerMenu();
 reveal();

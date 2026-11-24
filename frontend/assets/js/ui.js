@@ -12,6 +12,9 @@ export function md(s) {
   return esc(s)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/^\s*[-•]\s+(.*)$/gm, '<span class="li">$1</span>')
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/<\/span>\n+(?=<span class="li">)/g, "</span>")
+    .replace(/<\/span>\n/g, "</span>")
     .replace(/\n/g, "<br>");
 }
 
@@ -22,6 +25,11 @@ export function pkr(n, { short = false } = {}) {
   const v = Number(n);
   if (v >= 10_000_000) return `${short ? "" : "PKR "}${(v / 10_000_000).toFixed(2).replace(/\.?0+$/, "")} crore`;
   return `${short ? "" : "PKR "}${(v / 100_000).toFixed(1).replace(/\.0$/, "")} lakh`;
+}
+
+/** Today's date (or a given date) as YYYY-MM-DD in local time, not UTC. */
+export function localISO(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function parseDate(s) {
@@ -110,4 +118,19 @@ export async function busy(btn, label, fn) {
   const old = btn.innerHTML;
   btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = label;
   try { return await fn(); } finally { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.innerHTML = old; }
+}
+
+/** Light / dark toggle. Remembers the choice per visitor; defaults to the system setting. */
+export function themeToggle() {
+  const root = document.documentElement;
+  const current = () => root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const label = (b) => { const next = current() === "dark" ? "light" : "dark"; b.setAttribute("aria-label", `Switch to ${next} theme`); b.title = `Switch to ${next} theme`; };
+  $$("[data-theme-toggle]").forEach((b) => {
+    label(b);
+    b.addEventListener("click", () => {
+      root.dataset.theme = current() === "dark" ? "light" : "dark";
+      try { localStorage.setItem("lp_theme", root.dataset.theme); } catch (e) {}
+      $$("[data-theme-toggle]").forEach(label);
+    });
+  });
 }

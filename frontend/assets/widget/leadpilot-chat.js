@@ -30,7 +30,8 @@
   };
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/^\s*[-•]\s+(.*)$/gm, '<span class="li">$1</span>').replace(/\n/g, "<br>");
+    .replace(/^\s*[-•]\s+(.*)$/gm, '<span class="li">$1</span>').replace(/\n{3,}/g, "\n\n")
+    .replace(/<\/span>\n+(?=<span class="li">)/g, "</span>").replace(/<\/span>\n/g, "</span>").replace(/\n/g, "<br>");
   const rid = (p) => `${p}-${Math.random().toString(36).slice(2, 10)}`;
 
   const TEMPLATE = `
@@ -108,6 +109,8 @@
       this.root.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { if (!e.menu.hidden) this.toggleMenu(false); else this.close(); } });
       this.applyDealer();
       if (this.hasAttribute("open")) this.open();
+      const sync = () => { const th = document.documentElement.dataset.theme; th ? this.setAttribute("data-theme", th) : this.removeAttribute("data-theme"); };
+      sync(); new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     }
 
     attributeChangedCallback() {
@@ -185,6 +188,7 @@
     }
 
     greet() {
+      this.el.quick.hidden = false;
       const name = this.me && this.me.name ? ` ${this.me.name.split(" ")[0]}` : "";
       this.add("assistant", `Hi${name}! I'm the ${this.info.name} assistant. Tell me what ${this.info.what} you're looking for, your budget and when you plan to buy, and I'll find matching options and book a visit.`, { greeting: true });
     }
@@ -221,6 +225,7 @@
       if (opts.retry) html += `<button class="retry" data-retry="${esc(opts.retry)}">Try again</button>`;
       row.innerHTML = html;
       this.el.log.appendChild(row);
+      if (role === "user") this.el.quick.hidden = true;   // suggestions only help before the first message
       this.el.log.scrollTop = this.el.log.scrollHeight;
       return row;
     }

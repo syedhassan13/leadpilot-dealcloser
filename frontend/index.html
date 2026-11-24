@@ -32,6 +32,7 @@
     </nav>
     <div class="header-end">
       <span class="status-pill" id="status"><span class="dot"></span>Checking agent…</span>
+      <button class="btn btn-ghost btn-sm theme-btn" data-theme-toggle><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13a6.5 6.5 0 0 0 0-13z" fill="currentColor"/></svg></button>
       <a class="btn btn-ghost btn-sm" href="/console/">Dealer sign in</a>
       <a class="btn btn-primary btn-sm" href="#pilot">Request a pilot</a>
       <button class="btn btn-ghost btn-sm menu-btn" aria-expanded="false" aria-label="Open menu">Menu</button>
@@ -204,7 +205,10 @@
         <p class="lede">The dealer console shows every lead, its score and its full conversation, upcoming visits, and the follow-ups waiting for your approval.</p>
       </header>
       <figure class="console-shot reveal">
-        <img src="/assets/img/console.png" width="1440" height="900" loading="lazy" alt="The LeadPilot dealer console: KPIs, a 14-day activity chart, the lead pipeline and leads that need attention.">
+        <picture>
+          <source srcset="/assets/img/console.webp" type="image/webp">
+          <img src="/assets/img/console.png" width="1440" height="900" loading="lazy" decoding="async" alt="The LeadPilot dealer console: KPIs, a 14-day activity chart, the lead pipeline, hot leads that need attention and upcoming visits.">
+        </picture>
       </figure>
       <ul class="console-points reveal">
         <li><strong>Pipeline</strong><span>New → qualified → booked, with hot leads on top.</span></li>
@@ -303,7 +307,7 @@
           <div class="field"><label for="p-company">Dealership</label><input class="input" id="p-company" name="company" required minlength="2" maxlength="120" autocomplete="organization"></div>
         </div>
         <div class="row2">
-          <div class="field"><label for="p-phone">Phone / WhatsApp</label><input class="input" id="p-phone" name="phone" required maxlength="30" inputmode="tel" autocomplete="tel" pattern="[0-9+()\- ]{5,30}"></div>
+          <div class="field"><label for="p-phone">Phone / WhatsApp</label><input class="input" id="p-phone" name="phone" required maxlength="30" inputmode="tel" autocomplete="tel" pattern="[0-9+ \(\)\-]{5,30}"></div>
           <div class="field"><label for="p-email">Email (optional)</label><input class="input" id="p-email" name="email" type="email" maxlength="120" autocomplete="email"></div>
         </div>
         <div class="row2">

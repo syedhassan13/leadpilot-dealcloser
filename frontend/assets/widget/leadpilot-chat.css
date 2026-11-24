@@ -7,7 +7,7 @@
   position: fixed; right: 20px; bottom: 20px; z-index: 2147483000; font: 400 15px/1.5 var(--sans); color: var(--ink);
 }
 @media (prefers-color-scheme: dark) {
-  :host { --paper: #161613; --paper-2: #1f1f1b; --surface: #1b1b17; --ink: #ece8dd; --ink-2: #cfcabd; --muted: #9a9588;
+  :host(:not([data-theme="light"])) { --paper: #161613; --paper-2: #1f1f1b; --surface: #1b1b17; --ink: #ece8dd; --ink-2: #cfcabd; --muted: #9a9588;
     --rule: rgba(236, 232, 221, .14); --rule-strong: rgba(236, 232, 221, .3); --signal-text: #ff8a52; --ok: #6fcf9a; --danger: #ff8a80; }
 }
 * { box-sizing: border-box; }
@@ -60,7 +60,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .msg.user { align-self: flex-end; align-items: flex-end; }
 .msg.user .bubble { background: #15140f; color: #ece8dd; padding: 9px 13px; border-radius: 3px; white-space: pre-wrap; word-break: break-word; }
-@media (prefers-color-scheme: dark) { .msg.user .bubble { background: #ece8dd; color: #15140f; } }
+:host([data-theme="dark"]) { --paper: #161613; --paper-2: #1f1f1b; --surface: #1b1b17; --ink: #ece8dd; --ink-2: #cfcabd; --muted: #9a9588;
+    --rule: rgba(236, 232, 221, .14); --rule-strong: rgba(236, 232, 221, .3); --signal-text: #ff8a52; --ok: #6fcf9a; --danger: #ff8a80; }
+:host([data-theme="dark"]) .msg.user .bubble { background: #ece8dd; color: #15140f; }
+@media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .msg.user .bubble { background: #ece8dd; color: #15140f; } }
 .msg.assistant .bubble { padding: 2px 0 2px 13px; border-left: 2px solid var(--signal); color: var(--ink); word-break: break-word; }
 .msg.assistant .bubble strong { font-weight: 650; }
 .msg.assistant .li { display: block; padding-left: 14px; position: relative; margin: 2px 0; }
@@ -81,6 +84,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
 
+.quick[hidden] { display: none; }
 .quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 16px 10px; }
 .quick button { background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 3px; padding: 5px 10px; font-size: 12.5px; color: var(--ink-2); }
 .quick button:hover { border-color: var(--ink); color: var(--ink); }
