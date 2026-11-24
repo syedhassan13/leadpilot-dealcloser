@@ -14,8 +14,8 @@ from langgraph.runtime import Runtime
 
 from app import config, guard
 from app.agent import build_closer
-from app.db import now, upsert_lead
-from app.tools import LeadContext
+from app.db import get_lead, now, upsert_lead
+from app.tools import CATEGORY_OF, LeadContext
 
 
 class LeadState(MessagesState):
@@ -43,7 +43,11 @@ def route_after_guard(state: LeadState) -> str:
 def memory_node(state: LeadState, runtime: Runtime[LeadContext]) -> dict:
     """Memory agent: records activity on the lead and in long-term memory (what threads this user had)."""
     ctx = runtime.context
-    upsert_lead(ctx.user_id, last_thread_id=ctx.thread_id, last_customer_at=now(), last_agent_at=now())
+    lead = get_lead(ctx.user_id)
+    # A lead belongs to the dealer whose website it first chatted on (dealer-scoped widget).
+    first_dealer = ctx.dealer if ctx.dealer and not (lead or {}).get("business_id") else None
+    upsert_lead(ctx.user_id, last_thread_id=ctx.thread_id, last_customer_at=now(), last_agent_at=now(),
+                business_id=first_dealer, category=CATEGORY_OF.get(first_dealer) if first_dealer else None)
     if runtime.store is not None:
         ns = ("leads", ctx.user_id)
         old = runtime.store.get(ns, "activity")

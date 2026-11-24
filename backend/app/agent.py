@@ -12,6 +12,8 @@ from app import config
 from app.db import audit_log, get_lead, now, run
 from app.tools import TOOLS, LeadContext, pkr, today_pkt
 
+DEALER_NAMES = {"skyline": "Skyline Realty", "autohub": "AutoHub Motors"}
+
 SYSTEM_PROMPT = """You are LeadPilot, the AI sales closer for two businesses in Islamabad/Rawalpindi:
 - Skyline Realty: houses, apartments and plots (category "property")
 - AutoHub Motors: new and used cars (category "car")
@@ -68,7 +70,15 @@ def closer_prompt(request) -> str:
     ctx: LeadContext = request.runtime.context
     today = today_pkt()
     week = ", ".join(f"{(today + timedelta(days=i)):%a}={(today + timedelta(days=i)).isoformat()}" for i in range(8))
-    return (f"{SYSTEM_PROMPT}\n\nToday is {today:%A %d %B %Y} (Pakistan time). Next days: {week}.\n\n"
+    scope = ""
+    if ctx.dealer in DEALER_NAMES:
+        name = DEALER_NAMES[ctx.dealer]
+        other = DEALER_NAMES["autohub" if ctx.dealer == "skyline" else "skyline"]
+        what = "properties" if ctx.dealer == "skyline" else "cars"
+        scope = (f"\n\nYou are the assistant on {name}'s own website. Only discuss and book {name}'s {what}. "
+                 f"If the customer wants {'a car' if ctx.dealer == 'skyline' else 'a property'}, say our partner "
+                 f"{other} handles that and offer to help with {what} here.")
+    return (f"{SYSTEM_PROMPT}{scope}\n\nToday is {today:%A %d %B %Y} (Pakistan time). Next days: {week}.\n\n"
             f"What you remember about this customer:\n{_memory_block(ctx.user_id, request.runtime.store)}")
 
 
