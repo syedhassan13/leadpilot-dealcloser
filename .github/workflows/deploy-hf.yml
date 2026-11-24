@@ -1,10 +1,8 @@
-# Pushes the API to your Hugging Face Space on every push to main.
+# Optional alternative to Render: deploys the API to a Hugging Face Space when run manually.
 # Needs repo secrets: HF_TOKEN (write token) and HF_SPACE (e.g. "your-name/leadpilot").
 name: Deploy API to Hugging Face
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_dispatch:      # optional alternative to Render: run manually
 
 jobs:
   deploy:

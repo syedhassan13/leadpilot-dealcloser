@@ -1,20 +1,24 @@
 # Daily: wake the follow-up agent (drafts nudges for quiet leads; a human approves them in the dashboard).
-# Also pings /health every few hours so the free Space stays warm.
-# Needs repo secrets: API_URL (e.g. https://your-name-leadpilot.hf.space) and CRON_SECRET.
+# Also pings /health every 10 minutes so the free Render service never sleeps.
+# Needs repo secrets: API_URL (e.g. https://leadpilot-api.onrender.com) and CRON_SECRET.
+# Until API_URL is set, every step is skipped (no failure emails).
 name: Follow-ups and keep-alive
 on:
   schedule:
     - cron: "0 5 * * *"        # 10:00 Pakistan time: draft follow-ups
-    - cron: "0 */6 * * *"      # keep-alive
+    - cron: "*/10 * * * *"     # keep-alive: Render free tier sleeps after 15 min idle
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - name: Health check
-        run: curl -fsS --retry 3 --max-time 120 "${{ secrets.API_URL }}/health"
+      - name: Health check (keeps the service awake)
+        if: env.API_URL != ''
+        run: curl -fsS --retry 3 --retry-delay 10 --max-time 120 "$API_URL/health"
       - name: Draft follow-ups
-        if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
-        run: |
-          curl -fsS -X POST --max-time 300 -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" "${{ secrets.API_URL }}/cron/followups"
+        if: env.API_URL != '' && (github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch')
+        run: curl -fsS -X POST --max-time 300 -H "X-Cron-Secret: $CRON_SECRET" "$API_URL/cron/followups"

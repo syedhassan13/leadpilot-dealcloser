@@ -1,6 +1,6 @@
 // Where the LeadPilot API lives.
 // - Served by the API itself (/ui): leave DEPLOYED_API empty, same origin is used.
-// - Deployed on Vercel: put your Hugging Face Space URL here, e.g. "https://your-name-leadpilot.hf.space".
+// - Deployed on Vercel: put your Render URL here, e.g. "https://leadpilot-api.onrender.com".
 // You can also override it per browser with ?api=https://... in the URL.
 const DEPLOYED_API = "";
 

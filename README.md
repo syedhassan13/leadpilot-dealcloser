@@ -9,7 +9,7 @@ with drafts a human approves.
 | | Link |
 |---|---|
 | Website (customer + dealer dashboard) | `https://<your-vercel-app>.vercel.app` |
-| Agent API base URL | `https://<your-hf-user>-leadpilot.hf.space` |
+| Agent API base URL | `https://leadpilot-api.onrender.com` |
 | Demo video | `<YouTube unlisted / Drive link>` |
 
 ![Demo](docs/demo.gif)
@@ -37,7 +37,7 @@ flowchart LR
     C["Customer page<br/>listings · lead form · chat"]
     A["Dealer dashboard<br/>leads · bookings · follow-ups"]
   end
-  subgraph API["Agent API (FastAPI on Hugging Face Spaces, Docker)"]
+  subgraph API["Agent API (FastAPI on Render, Docker)"]
     direction TB
     EP["POST /chat · GET /health<br/>POST /leads · /admin/*"]
     subgraph G["LangGraph StateGraph"]
@@ -150,7 +150,7 @@ Other endpoints:
 `tests.json` has our 10 track tests plus the 5 common attack tests. Each run uses fresh user ids:
 
 ```bash
-python bench.py https://<your-hf-user>-leadpilot.hf.space   # writes benchmark.md
+python bench.py https://leadpilot-api.onrender.com   # writes benchmark.md
 ```
 
 | Metric | Result |
@@ -213,18 +213,17 @@ To run the benchmark, use `python bench.py` from the repo root.
 1. **Database (Supabase):**
    - Create a project. Go to **Connect**, then **Session pooler**, and copy the URI (port 5432). Put your database password into it.
    - Tables are created automatically on first start.
-2. **Agent API (Hugging Face Spaces):**
-   - **Create the Space:** go to huggingface.co, then New Space. Choose SDK **Docker**, Blank, and name it `leadpilot`.
-   - **Add secrets:** in Space **Settings**, then **Variables and secrets**, add `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ADMIN_TOKENS`, `CRON_SECRET` and `ALLOWED_ORIGINS`.
-   - **Connect GitHub:** create a Hugging Face **write** token. In this GitHub repo's **Settings**, then **Secrets**, then **Actions**, add `HF_TOKEN` (that token) and `HF_SPACE` (`<hf-user>/leadpilot`).
-   - **Deploy:** push to `main` (or run the "Deploy API to Hugging Face" workflow). The Space builds the Dockerfile.
-   - **Check it:** `https://<hf-user>-leadpilot.hf.space/health` should return `ok`.
-   - *Alternative:* Render, using **New**, then **Blueprint**, which reads `render.yaml`.
+2. **Agent API (Render):**
+   - Go to render.com, then **New**, then **Blueprint**, and pick this repo. It reads `render.yaml` (a free Docker web service).
+   - Fill in the secrets it asks for: `ANTHROPIC_API_KEY`, `DATABASE_URL` (the Supabase URI) and `ADMIN_TOKENS`. `CRON_SECRET` is generated automatically.
+   - **Check it:** `https://leadpilot-api.onrender.com/health` should return `ok`.
+   - **Keep it awake:** the free tier sleeps after 15 minutes idle, so the "Follow-ups and keep-alive" workflow pings `/health` every 10 minutes (step 4).
+   - *Alternative:* a Hugging Face Space. Add `HF_TOKEN` and `HF_SPACE` secrets, then run the "Deploy API to Hugging Face" workflow manually.
 3. **Website (Vercel):**
-   - Set `DEPLOYED_API` in `frontend/config.js` to the Space URL and push.
+   - Set `DEPLOYED_API` in `frontend/config.js` to the Render URL and push.
    - In Vercel, choose **Add New**, then **Project**, and import this repo.
    - Set **Root Directory** = `frontend`, Framework = Other, then Deploy.
-4. **Follow-ups and keep-alive:** add GitHub secrets `API_URL` (Space URL) and `CRON_SECRET`. The "Follow-ups and keep-alive" workflow drafts follow-ups daily and pings `/health`.
+4. **Follow-ups and keep-alive:** add GitHub secrets `API_URL` (the Render URL) and `CRON_SECRET` (the same value as on Render). The "Follow-ups and keep-alive" workflow drafts follow-ups daily and pings `/health` every 10 minutes.
 
 ## Project structure
 
@@ -241,7 +240,7 @@ backend/app/
 backend/knowledge/   Policy documents for RAG
 frontend/            index.html (customer), admin.html (dashboard), app.js, admin.js, styles.css, config.js
 tests.json, bench.py Benchmark
-Dockerfile, render.yaml, .github/workflows/
+Dockerfile, render.yaml (Render), .github/workflows/
 ```
 
 No API keys are committed: secrets live in `.env` locally (git-ignored) and in platform secrets when deployed.
