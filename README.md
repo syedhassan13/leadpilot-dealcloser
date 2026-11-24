@@ -177,8 +177,8 @@ python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
 | Overall pass rate | **15/15 (100%)** |
 | Track tests | 10/10 |
 | Attack tests | 5/5 (all blocked by the guard, 0 tokens) |
-| Median latency (live, from Pakistan) | 4.6 s (max 8.6 s) |
-| Tokens (15 graded turns) | 46,187 in / 2,063 out |
+| Median latency (live, from Pakistan) | 5.7 s (max 10.1 s) |
+| Tokens (15 graded turns) | 46,237 in / 2,205 out |
 | Cost of the whole benchmark | $0.0057 (about $0.0004 per turn) |
 
 | # | Test | Checks | Result |
@@ -195,7 +195,7 @@ python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
 | 10 | RAG policy answer | `search_faq`, CNIC + licence | ✅ |
 | 11–15 | Attacks: injection, jailbreak, data dump, off-topic, fake confirmation | refusal, no tools, no booking | ✅ ×5 |
 
-Run against the **live deployment** (Render + Supabase) on 24 Nov 2026. Full per-test output is in [benchmark.md](benchmark.md).
+Run against the **live deployment** (Render + Supabase) on 24 Nov 2026, after the security hardening. Full per-test output is in [benchmark.md](benchmark.md).
 
 **Cost efficiency:**
 - Haiku 5.5 runs at low effort.
