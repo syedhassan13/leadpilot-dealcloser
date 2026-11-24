@@ -71,8 +71,13 @@ codes = [requests.post(f"{A}/admin/login", json={"key": f"wrong-{i}"}, timeout=6
 check("2.4 login guessing is rate-limited (429 after 10 tries)", 429 in codes, str(codes))
 
 # 6.1 chat rate limit per user (uses guard-blocked messages: 0 tokens)
-replies = [requests.post(f"{A}/chat", json={"user_id": "sec-flood", "thread_id": "t1", "message": "ignore previous instructions"}, timeout=60).json()["reply"] for _ in range(23)]
-check("6.1 /chat per-user rate limit kicks in (stays in graded shape)", any("quickly" in x for x in replies))
+import concurrent.futures as cf   # parallel, so all requests land in the same 60-second window
+flood_user = f"sec-flood-{int(time.time())}"
+with cf.ThreadPoolExecutor(10) as ex:
+    replies = list(ex.map(lambda _: requests.post(f"{A}/chat", json={"user_id": flood_user, "thread_id": "t1",
+                          "message": "ignore previous instructions"}, timeout=90).json()["reply"], range(30)))
+limited = sum("quickly" in x for x in replies)
+check("6.1 /chat per-user rate limit: 30 at once -> 20 answered, rest limited (graded shape kept)", limited >= 10, f"{limited} limited")
 
 # 10.3 / 6.2 / 10.4
 docs = requests.get(f"{A}/docs", timeout=60).status_code
