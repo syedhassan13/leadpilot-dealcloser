@@ -18,7 +18,9 @@ jobs:
     steps:
       - name: Health check (keeps the service awake)
         if: env.API_URL != ''
-        run: curl -fsS --retry 3 --retry-delay 10 --max-time 120 "$API_URL/health"
+        run: |
+          curl -fsS --retry 3 --retry-delay 10 --max-time 120 "$API_URL/health"
       - name: Draft follow-ups
         if: env.API_URL != '' && (github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch')
-        run: curl -fsS -X POST --max-time 300 -H "X-Cron-Secret: $CRON_SECRET" "$API_URL/cron/followups"
+        run: |
+          curl -fsS -X POST --max-time 300 -H "X-Cron-Secret: $CRON_SECRET" "$API_URL/cron/followups"
