@@ -30,7 +30,7 @@
       <p>Tell us your budget and timeline. Our AI assistant shortlists matching properties from Skyline Realty and cars
         from AutoHub Motors, answers financing questions and books your site visit or test drive.</p>
       <div class="row">
-        <button class="btn primary" onclick="openChat()">💬 Chat now</button>
+        <button class="btn primary" data-open-chat>💬 Chat now</button>
         <a class="btn" href="#listings">Browse listings</a>
       </div>
       <div class="hero-stats">
@@ -56,7 +56,9 @@
       </div>
       <div class="field"><label for="f-msg">What do you need? (optional)</label>
         <textarea id="f-msg" rows="2" maxlength="1000" placeholder="e.g. 3 bed house in DHA, budget 2 crore, buying in 2 months"></textarea></div>
+      <div class="hp" aria-hidden="true"><label for="f-website">Website</label><input id="f-website" tabindex="-1" autocomplete="off"></div>
       <button class="btn primary" style="width:100%;justify-content:center" id="lead-submit">Get my instant reply</button>
+      <p class="hint consent">By submitting, you agree to our <a href="privacy.html">Privacy Policy</a> and <a href="terms.html">Terms</a>. Your messages are answered by an AI assistant.</p>
     </form>
   </div>
 
@@ -83,20 +85,24 @@
   </section>
 </main>
 
-<footer><div class="wrap">LeadPilot, DealCloser track. Demo data only: listings, prices and businesses are fictional.</div></footer>
+<footer><div class="wrap footer-row">
+  <span>LeadPilot, DealCloser track. Demo data only: listings, prices and businesses are fictional.</span>
+  <span class="footer-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="#" id="footer-delete">Delete my data</a> · <a href="/.well-known/security.txt">Security</a></span>
+</div></footer>
 
-<button class="btn primary chat-fab" id="chat-fab" onclick="openChat()">💬 Chat with LeadPilot</button>
+<button class="btn primary chat-fab" id="chat-fab" data-open-chat>💬 Chat with LeadPilot</button>
 
 <div class="chat card" id="chat" aria-live="polite">
   <div class="chat-head">
     <span class="logo-mark">L</span>
     <div class="who"><b>LeadPilot assistant</b><span id="chat-who"><span class="dot"></span>Online</span></div>
-    <button class="btn small ghost" onclick="closeChat()" aria-label="Close chat">✕</button>
+    <button class="btn small ghost" id="chat-close" aria-label="Close chat">✕</button>
   </div>
   <div class="chat-tools">
-    <button class="btn small" onclick="newThread()" title="Start a new conversation (long-term memory remembers you)">＋ New chat</button>
-    <button class="btn small" onclick="showBookings()">📅 My bookings</button>
-    <button class="btn small" onclick="switchUser()" title="Demo: become a different customer">👤 Switch user</button>
+    <button class="btn small" id="btn-new" title="Start a new conversation (long-term memory remembers you)">＋ New chat</button>
+    <button class="btn small" id="btn-bookings">📅 My bookings</button>
+    <button class="btn small" id="btn-switch" title="Demo: become a different customer">👤 Switch user</button>
+    <button class="btn small" id="btn-delete" title="Delete all your data">🗑 Delete my data</button>
   </div>
   <div class="msgs" id="msgs"></div>
   <div class="suggest" id="suggest">

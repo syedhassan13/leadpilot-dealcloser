@@ -3,6 +3,7 @@ const API = window.LEADPILOT_API;
 const $ = (id) => document.getElementById(id);
 let interest = "property";
 let busy = false;
+const formOpenedAt = Date.now();
 
 // ── storage helpers (the page still works if storage is blocked) ──
 const store = {
@@ -10,14 +11,13 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
   del(k) { try { localStorage.removeItem(k); } catch (e) {} },
 };
-let me = store.get("lp_user");          // {user_id, name}
+// me = {user_id, token, name}. The server issues the id and a signed token; only that token opens this
+// customer's chats, bookings and profile. Note: kept in localStorage (audit 2.6, reported as Medium).
+let me = store.get("lp_user");
 let threadId = store.get("lp_thread");
+if (me && !me.token) { me = null; store.del("lp_user"); }
 
 function randomId(prefix) { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
-function ensureUser() {
-  if (!me) { me = { user_id: randomId("guest"), name: "Guest" }; store.set("lp_user", me); }
-  if (!threadId) { threadId = randomId("t"); store.set("lp_thread", threadId); }
-}
 
 function toast(text) {
   const t = $("toast"); t.textContent = text; t.classList.add("show");
@@ -25,18 +25,29 @@ function toast(text) {
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  const headers = { "Content-Type": "application/json" };
+  if (me && me.token) headers["X-User-Token"] = me.token;
+  const res = await fetch(API + path, { ...opts, headers });
+  if (!res.ok) throw new Error(String(res.status));
   const type = res.headers.get("content-type") || "";
   return type.includes("json") ? res.json() : res.text();
 }
 
-// ── formatting ──
+async function ensureUser(name) {
+  if (!me) {
+    const s = await api("/customer/session", { method: "POST" });
+    me = { user_id: s.user_id, token: s.token, name: name || "Guest" };
+    store.set("lp_user", me);
+  }
+  if (!threadId) { threadId = randomId("t"); store.set("lp_thread", threadId); }
+}
+
+// ── formatting: everything is escaped before it touches the page (audit 5.2, 8.3) ──
 function pkr(n) {
   if (n >= 10_000_000) return `PKR ${(n / 10_000_000).toFixed(2).replace(/\.?0+$/, "")} crore`;
   return `PKR ${(n / 100_000).toFixed(1).replace(/\.0$/, "")} lakh`;
 }
-function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function md(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^\s*[-•]\s+/gm, "• "); }
 
 // ── listings ──
@@ -48,14 +59,14 @@ async function loadListings() {
     $("stat-cars").textContent = allListings.filter((l) => l.category === "car").length;
     renderListings("");
   } catch (e) {
-    $("listing-grid").innerHTML = `<div class="empty">Couldn't reach the API at ${esc(API)}. Is it running?</div>`;
+    $("listing-grid").innerHTML = `<div class="empty">Listings are unavailable right now. Please try again shortly.</div>`;
   }
 }
 function renderListings(cat) {
   const items = allListings.filter((l) => !cat || l.category === cat);
   $("listing-grid").innerHTML = items.map((l) => {
     const icon = l.category === "car" ? "🚗" : (l.bedrooms ? "🏠" : "📐");
-    const spec = l.bedrooms ? `${l.bedrooms} bed · ` : (l.year ? `${l.year} model · ` : "");
+    const spec = l.bedrooms ? `${esc(l.bedrooms)} bed · ` : (l.year ? `${esc(l.year)} model · ` : "");
     const cta = l.category === "car" ? "Book a test drive" : "Book a site visit";
     return `<article class="card listing">
       <div class="art">${icon}</div>
@@ -65,7 +76,7 @@ function renderListings(cat) {
         <span class="loc">📍 ${esc(l.location)}</span>
         <span class="details">${spec}${esc(l.details)}</span>
         <span class="price">${pkr(l.price_pkr)}</span>
-        <button class="btn small primary" onclick="askAbout('${l.id}', '${cta}')">${cta}</button>
+        <button class="btn small primary" data-ask="${esc(l.id)}" data-cta="${esc(cta)}">${cta}</button>
       </div></article>`;
   }).join("") || `<div class="empty">No listings.</div>`;
 }
@@ -74,11 +85,12 @@ $("tabs").addEventListener("click", (e) => {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
   renderListings(b.dataset.c);
 });
-function askAbout(id, cta) {
+$("listing-grid").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-ask]"); if (!b) return;
   openChat();
-  $("chat-input").value = `${cta} for ${id}. What slots are free this week?`;
+  $("chat-input").value = `${b.dataset.cta} for ${b.dataset.ask}. What slots are free this week?`;
   $("chat-input").focus();
-}
+});
 
 // ── lead form: the instant reply ──
 $("interest-seg").addEventListener("click", (e) => {
@@ -90,24 +102,28 @@ $("lead-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("lead-submit"); btn.disabled = true; btn.textContent = "Connecting you…";
   try {
-    const r = await api("/leads", { method: "POST", body: JSON.stringify({
-      name: $("f-name").value, phone: $("f-phone").value, interest, message: $("f-msg").value }) });
-    me = { user_id: r.user_id, name: $("f-name").value.trim() }; threadId = r.thread_id;
+    const r = await fetch(API + "/leads", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("f-name").value, phone: $("f-phone").value, interest, message: $("f-msg").value,
+        website: $("f-website").value, elapsed_ms: Date.now() - formOpenedAt }) });
+    if (r.status === 429) throw new Error("rate");
+    if (!r.ok) throw new Error("bad");
+    const d = await r.json();
+    me = { user_id: d.user_id, token: d.token, name: $("f-name").value.trim() }; threadId = d.thread_id;
     store.set("lp_user", me); store.set("lp_thread", threadId);
     openChat(false);
     $("msgs").innerHTML = "";
-    addMsg("user", r.first_message);
-    addMsg("assistant", r.reply, [`replied in ${(r.response_ms / 1000).toFixed(1)}s`]);
+    addMsg("user", d.first_message);
+    addMsg("assistant", d.reply, [`replied in ${(d.response_ms / 1000).toFixed(1)}s`]);
     updateWho();
     $("lead-form").reset();
   } catch (err) {
-    toast("Sorry, something went wrong. Please try again.");
+    toast(err.message === "rate" ? "Too many requests. Please wait a few minutes." : "Please check your details and try again.");
   } finally { btn.disabled = false; btn.textContent = "Get my instant reply"; }
 });
 
 // ── chat ──
 function updateWho() {
-  $("chat-who").innerHTML = `<span class="dot"></span>Online · ${esc(me?.name || "Guest")} · chat ${esc(threadId || "")}`;
+  $("chat-who").innerHTML = `<span class="dot"></span>Online · ${esc(me?.name || "Guest")}`;
 }
 function addMsg(role, text, chips = [], kind = "") {
   const div = document.createElement("div");
@@ -115,20 +131,23 @@ function addMsg(role, text, chips = [], kind = "") {
   div.innerHTML = md(text);
   if (kind === "followup") chips = ["follow-up", ...chips];
   if (chips.length) div.innerHTML += `<div class="meta">${chips.map((c) =>
-    `<span class="chip ${c === "follow-up" ? "warn" : (c.startsWith("replied") || c.startsWith("tokens") ? "muted" : "")}">${esc(c)}</span>`).join("")}</div>`;
+    `<span class="chip ${c === "follow-up" ? "warn" : (c.startsWith("replied") ? "muted" : "")}">${esc(c)}</span>`).join("")}</div>`;
   $("msgs").appendChild(div);
   $("msgs").scrollTop = $("msgs").scrollHeight;
 }
 async function loadThread() {
-  ensureUser(); updateWho();
   $("msgs").innerHTML = "";
   try {
+    await ensureUser(); updateWho();
     const r = await api(`/customer/${encodeURIComponent(me.user_id)}/threads/${encodeURIComponent(threadId)}`);
     if (!r.messages.length) {
       addMsg("assistant", `Hi${me.name && me.name !== "Guest" ? " " + me.name : ""}! I'm LeadPilot. Are you looking for a property or a car? Tell me your budget and when you plan to buy.`);
     }
     r.messages.forEach((m) => addMsg(m.role, m.text, [], m.kind));
-  } catch (e) { addMsg("assistant", "I can't reach the server right now. Please try again in a moment."); }
+  } catch (e) {
+    if (e.message === "401") { me = null; store.del("lp_user"); return loadThread(); }
+    addMsg("assistant", "I can't reach the server right now. Please try again in a moment.");
+  }
 }
 function openChat(load = true) {
   $("chat").classList.add("open"); $("chat-fab").style.display = "none";
@@ -138,12 +157,13 @@ function openChat(load = true) {
 function closeChat() { $("chat").classList.remove("open"); $("chat-fab").style.display = ""; }
 async function send(text) {
   if (busy || !text.trim()) return;
-  ensureUser(); busy = true; $("send-btn").disabled = true;
+  busy = true; $("send-btn").disabled = true;
   addMsg("user", text);
   const typing = document.createElement("div"); typing.className = "typing"; typing.textContent = "LeadPilot is typing…";
   $("msgs").appendChild(typing); $("msgs").scrollTop = $("msgs").scrollHeight;
   const t0 = performance.now();
   try {
+    await ensureUser();
     const r = await api("/chat", { method: "POST", body: JSON.stringify({ user_id: me.user_id, thread_id: threadId, message: text }) });
     typing.remove();
     const chips = r.tool_calls.map((c) => `🔧 ${c.name}`);
@@ -160,22 +180,42 @@ function newThread() {
   threadId = randomId("t"); store.set("lp_thread", threadId);
   loadThread(); toast("New conversation started. I still remember you.");
 }
-function switchUser() {
-  const name = prompt("Demo: switch to which customer name? (each name is a separate user)", "");
+async function switchUser() {
+  const name = prompt("Demo: start as a different customer. Their name?", "");
   if (!name) return;
-  me = { user_id: "demo-" + name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: name.trim() };
-  threadId = randomId("t"); store.set("lp_user", me); store.set("lp_thread", threadId);
+  me = null; threadId = null; store.del("lp_user"); store.del("lp_thread");
+  await ensureUser(name.trim().slice(0, 40));
   loadThread(); toast(`You are now ${name}. Their data is completely separate.`);
 }
 async function showBookings() {
-  ensureUser(); openChat(false);
+  openChat(false);
   try {
+    await ensureUser();
     const list = await api(`/customer/${encodeURIComponent(me.user_id)}/bookings`);
     addMsg("assistant", list.length ? "Your bookings:\n" + list.map((b) =>
       `• #${b.id} ${b.kind} – ${b.title} (${b.listing_id}) on ${b.date} at ${b.time} [${b.status}]`).join("\n")
       : "You have no bookings yet. Want me to find you a slot?");
   } catch (e) { toast("Couldn't load bookings."); }
 }
+async function deleteMyData() {
+  if (!me) { toast("We don't hold any data for you."); return; }
+  if (!confirm("Delete all your data (chats, bookings, saved details)? This can't be undone.")) return;
+  try {
+    await api(`/customer/${encodeURIComponent(me.user_id)}`, { method: "DELETE" });
+    me = null; threadId = null; store.del("lp_user"); store.del("lp_thread");
+    $("msgs").innerHTML = ""; addMsg("assistant", "All your data has been deleted. You can start fresh any time.");
+    toast("Your data was deleted.");
+  } catch (e) { toast("Couldn't delete right now. Please try again."); }
+}
+
+// ── buttons (no inline handlers) ──
+document.querySelectorAll("[data-open-chat]").forEach((b) => b.addEventListener("click", () => openChat()));
+$("chat-close").addEventListener("click", closeChat);
+$("btn-new").addEventListener("click", newThread);
+$("btn-bookings").addEventListener("click", showBookings);
+$("btn-switch").addEventListener("click", switchUser);
+$("btn-delete").addEventListener("click", deleteMyData);
 $("nav-bookings").addEventListener("click", (e) => { e.preventDefault(); showBookings(); });
+$("footer-delete").addEventListener("click", (e) => { e.preventDefault(); openChat(false); deleteMyData(); });
 
 loadListings();
