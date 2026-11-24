@@ -1,6 +1,6 @@
 # Daily: wake the follow-up agent (drafts nudges for quiet leads; a human approves them in the dashboard).
 # Also pings /health every 10 minutes so the free Render service never sleeps.
-# Needs repo secrets: API_URL (e.g. https://leadpilot-api.onrender.com) and CRON_SECRET.
+# Needs repo secrets: API_URL (e.g. https://leadpilot-api-hhys.onrender.com) and CRON_SECRET.
 # Until API_URL is set, every step is skipped (no failure emails).
 name: Follow-ups and keep-alive
 on:

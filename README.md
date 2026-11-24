@@ -9,7 +9,7 @@ with drafts a human approves.
 | | Link |
 |---|---|
 | Website (customer + dealer dashboard) | `https://<your-vercel-app>.vercel.app` |
-| Agent API base URL | `https://leadpilot-api.onrender.com` |
+| Agent API base URL | `https://leadpilot-api-hhys.onrender.com` |
 | Demo video | `<YouTube unlisted / Drive link>` |
 
 ![Demo](docs/demo.gif)
@@ -150,7 +150,7 @@ Other endpoints:
 `tests.json` has our 10 track tests plus the 5 common attack tests. Each run uses fresh user ids:
 
 ```bash
-python bench.py https://leadpilot-api.onrender.com   # writes benchmark.md
+python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
 ```
 
 | Metric | Result |
@@ -216,7 +216,7 @@ To run the benchmark, use `python bench.py` from the repo root.
 2. **Agent API (Render):**
    - Go to render.com, then **New**, then **Blueprint**, and pick this repo. It reads `render.yaml` (a free Docker web service).
    - Fill in the secrets it asks for: `ANTHROPIC_API_KEY`, `DATABASE_URL` (the Supabase URI) and `ADMIN_TOKENS`. `CRON_SECRET` is generated automatically.
-   - **Check it:** `https://leadpilot-api.onrender.com/health` should return `ok`.
+   - **Check it:** `https://leadpilot-api-hhys.onrender.com/health` should return `ok`.
    - **Keep it awake:** the free tier sleeps after 15 minutes idle, so the "Follow-ups and keep-alive" workflow pings `/health` every 10 minutes (step 4).
    - *Alternative:* a Hugging Face Space. Add `HF_TOKEN` and `HF_SPACE` secrets, then run the "Deploy API to Hugging Face" workflow manually.
 3. **Website (Vercel):**

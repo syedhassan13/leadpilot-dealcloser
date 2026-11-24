@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY --chown=user backend backend
 COPY --chown=user frontend frontend
+RUN chown -R user:user /home/user/app
 USER user
 WORKDIR /home/user/app/backend
 
