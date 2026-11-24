@@ -8,6 +8,8 @@ let session = null;
 try { session = JSON.parse(sessionStorage.getItem(S_KEY)); } catch (e) {}
 let me = null;
 let lastLoad = 0;
+let navToken = 0;           // newest navigation wins; slower, older responses are dropped
+let navCtrl = null;          // removes the previous view's event listeners
 
 // ───────── API with session ─────────
 async function api(path, opts = {}) {
@@ -75,6 +77,9 @@ function parseHash() {
 async function route(silent = false) {
   if (!me) return;
   const r = parseHash();
+  r.token = ++navToken;
+  navCtrl?.abort(); navCtrl = new AbortController(); r.signal = navCtrl.signal;
+  r.stale = () => r.token !== navToken;
   $("#page-title").textContent = TITLES[r.view];
   document.title = `${TITLES[r.view]} · LeadPilot console`;
   const navKey = r.view === "lead" ? "leads" : r.view;
@@ -84,11 +89,12 @@ async function route(silent = false) {
   if (!silent) { view.classList.remove("view-enter"); view.innerHTML = loading(); void view.offsetWidth; view.classList.add("view-enter"); }
   try {
     await VIEWS[r.view](view, r);
+    if (r.stale()) return;
     $$("[data-w]", view).forEach((el) => { el.style.width = `${Number(el.dataset.w) || 0}%`; });
     lastLoad = Date.now(); stamp();
     if (!silent) view.focus({ preventScroll: true });
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) return;
+    if (r.stale() || (e instanceof ApiError && e.status === 401)) return;
     view.innerHTML = `<div class="error-state" role="alert"><strong>Couldn't load this page.</strong> ${esc(e.message)}
       <div class="mt"><button class="btn btn-sm" data-act="retry">Try again</button></div></div>`;
   }
@@ -126,8 +132,9 @@ const empty = (title, text, action = "") => `<div class="empty-state"><p class="
 function setBadge(n) { const b = $("#fu-badge"); b.textContent = n; b.hidden = !n; }
 
 // ───────── overview ─────────
-async function overview(view) {
+async function overview(view, r) {
   const [s, hot, books] = await Promise.all([api("/admin/stats"), api("/admin/leads?score=hot&limit=40"), api("/admin/bookings?limit=200")]);
+  if (r.stale()) return;
   setBadge(s.pending_followups);
   const total = s.leads || 1;
   const today = localISO();
@@ -183,8 +190,9 @@ function chart(series) {
 
 // ───────── pipeline (drag to change status) ─────────
 const STAGES = [["new", "New"], ["qualified", "Qualified"], ["booked", "Booked"], ["lost", "Lost"]];
-async function pipeline(view) {
+async function pipeline(view, r) {
   const list = await api("/admin/leads?limit=200");
+  if (r.stale()) return;
   const order = { hot: 0, warm: 1, cold: 2 };
   view.innerHTML = `<p class="muted small">Drag a card to move a lead between stages. Hot leads sit on top.</p><div class="board">${STAGES.map(([k, label]) => {
     const items = list.filter((l) => l.status === k).sort((a, b) => (order[a.score] ?? 3) - (order[b.score] ?? 3));
@@ -192,9 +200,9 @@ async function pipeline(view) {
       <div class="col-body">${items.map(card).join("") || `<p class="col-empty">No leads here</p>`}</div></section>`;
   }).join("")}</div>`;
   let dragged = null;
-  view.addEventListener("dragstart", (e) => { const c = e.target.closest(".lead-card"); if (!c) return; dragged = c; c.classList.add("dragging"); e.dataTransfer.setData("text/plain", c.dataset.id); });
-  view.addEventListener("dragend", () => { dragged?.classList.remove("dragging"); $$(".col", view).forEach((c) => c.classList.remove("drop")); });
-  view.addEventListener("dragover", (e) => { const col = e.target.closest(".col"); if (!col) return; e.preventDefault(); $$(".col", view).forEach((c) => c.classList.toggle("drop", c === col)); });
+  view.addEventListener("dragstart", (e) => { const c = e.target.closest(".lead-card"); if (!c) return; dragged = c; c.classList.add("dragging"); e.dataTransfer.setData("text/plain", c.dataset.id); }, { signal: r.signal });
+  view.addEventListener("dragend", () => { dragged?.classList.remove("dragging"); $$(".col", view).forEach((c) => c.classList.remove("drop")); }, { signal: r.signal });
+  view.addEventListener("dragover", (e) => { const col = e.target.closest(".col"); if (!col) return; e.preventDefault(); $$(".col", view).forEach((c) => c.classList.toggle("drop", c === col)); }, { signal: r.signal });
   view.addEventListener("drop", async (e) => {
     const col = e.target.closest(".col"); if (!col || !dragged) return;
     e.preventDefault();
@@ -204,7 +212,7 @@ async function pipeline(view) {
       await api(`/admin/leads/${encodeURIComponent(id)}/status`, { method: "POST", body: { status } });
       toast(`Moved to ${status}`); route(true);
     } catch (ex) { toast(ex.message, { error: true }); }
-  });
+  }, { signal: r.signal });
 }
 function card(l) {
   return `<a class="lead-card" draggable="true" data-id="${esc(l.user_id)}" href="#/leads/${encodeURIComponent(l.user_id)}">
@@ -220,6 +228,7 @@ async function leads(view, r) {
   let offset = 0;
   const qs = () => new URLSearchParams(Object.entries({ q, status, score, limit: 100, offset }).filter(([, v]) => v !== "")).toString();
   const first = await api(`/admin/leads?${qs()}`);
+  if (r.stale()) return;
   const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`;
   view.innerHTML = `
     <form class="table-tools" id="lead-filters">
@@ -241,8 +250,8 @@ async function leads(view, r) {
     $("#lead-rows").insertAdjacentHTML("beforeend", next.map(row).join(""));
     if (next.length < 100) e.target.remove();
   });
-  view.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr) location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; });
-  view.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr && e.key === "Enter") location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; });
+  view.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr) location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; }, { signal: r.signal });
+  view.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr && e.key === "Enter") location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; }, { signal: r.signal });
 }
 function row(l) {
   return `<tr class="clickable" tabindex="0" data-id="${esc(l.user_id)}"><td><strong>${esc(leadName(l))}</strong><span class="sub">${esc(l.phone || l.source || "")}</span></td>
@@ -255,6 +264,7 @@ const TOOL_LABEL = { search_inventory: "Searched inventory", get_listing: "Opene
   book_visit: "Booked a visit", my_bookings: "Listed bookings", cancel_booking: "Cancelled a booking", save_lead_details: "Saved lead details", search_faq: "Searched policies" };
 async function leadDetail(view, r) {
   const d = await api(`/admin/leads/${encodeURIComponent(r.id)}`);
+  if (r.stale()) return;
   const l = d.lead;
   $("#page-title").textContent = leadName(l);
   const threads = Object.keys(d.conversations);
@@ -316,6 +326,7 @@ async function leadDetail(view, r) {
 // ───────── bookings agenda ─────────
 async function bookings(view, r) {
   const all = await api("/admin/bookings?limit=200");
+  if (r.stale()) return;
   const mode = r.params.get("show") || "upcoming";
   const today = localISO();
   const list = all.filter((b) => mode === "all" ? true : mode === "past" ? b.date < today : b.date >= today && b.status !== "cancelled");
@@ -338,12 +349,13 @@ async function bookings(view, r) {
     try { await busy(b, "Saving…", () => api(`/admin/bookings/${b.dataset.id}/status`, { method: "POST", body: { status: b.dataset.bstat } }));
       toast(b.dataset.bstat === "completed" ? "Marked as done" : "Visit cancelled"); route(true); }
     catch (ex) { toast(ex.message, { error: true }); }
-  });
+  }, { signal: r.signal });
 }
 
 // ───────── follow-ups (human approval) ─────────
-async function followups(view) {
+async function followups(view, r) {
   const list = await api("/admin/followups?limit=200");
+  if (r.stale()) return;
   const drafts = list.filter((f) => f.status === "draft"), history = list.filter((f) => f.status !== "draft");
   setBadge(drafts.length);
   view.innerHTML = `
@@ -363,7 +375,7 @@ async function followups(view) {
       ${history.length ? `<div class="table-wrap"><table><thead><tr><th>Lead</th><th>Message</th><th>Status</th><th>When</th></tr></thead><tbody>
         ${history.map((f) => `<tr><td>${esc(f.name || "Buyer")}</td><td>${esc(f.message)}</td><td>${statusTag(f.status)}</td><td class="num">${when(f.sent_at || f.created_at)}</td></tr>`).join("")}</tbody></table></div>`
         : `<p class="panel-body muted">Sent and skipped follow-ups appear here.</p>`}</section>`;
-  view.addEventListener("input", (e) => { const t = e.target.closest(".draft textarea"); if (t) t.closest(".draft").querySelector(".count").textContent = `${t.value.length}/1000`; });
+  view.addEventListener("input", (e) => { const t = e.target.closest(".draft textarea"); if (t) t.closest(".draft").querySelector(".count").textContent = `${t.value.length}/1000`; }, { signal: r.signal });
   view.addEventListener("click", async (e) => {
     const run = e.target.closest("[data-run]"), ap = e.target.closest("[data-approve]"), sk = e.target.closest("[data-skip]");
     try {
@@ -380,12 +392,13 @@ async function followups(view) {
         toast("Skipped"); route(true);
       }
     } catch (ex) { toast(ex.message, { error: true }); }
-  });
+  }, { signal: r.signal });
 }
 
 // ───────── install & settings ─────────
-async function settings(view) {
+async function settings(view, r) {
   const dealers = await request("/dealers");
+  if (r.stale()) return;
   const mine = me.business === "*" ? dealers[0]?.id : me.business;
   const site = location.origin;
   const snippet = (d) => `<span class="k">&lt;script</span> src=<span class="s">"${esc(site)}/assets/widget/leadpilot-chat.js"</span> defer<span class="k">&gt;&lt;/script&gt;</span>
@@ -420,13 +433,14 @@ async function settings(view) {
     if (!e.target.closest("#copy")) return;
     try { await navigator.clipboard.writeText($("#snippet").textContent.trim()); toast("Snippet copied"); }
     catch (ex) { toast("Select the snippet and copy it manually.", { error: true }); }
-  });
+  }, { signal: r.signal });
 }
 
 // ───────── pilot requests (LeadPilot team only) ─────────
-async function pilots(view) {
+async function pilots(view, r) {
   if (me.business !== "*") { view.innerHTML = empty("Not available.", "Only the LeadPilot team can see pilot requests."); return; }
   const list = await api("/admin/pilot-requests");
+  if (r.stale()) return;
   view.innerHTML = list.length ? `<div class="table-wrap"><table><thead><tr><th>Dealership</th><th>Contact</th><th>Sells</th><th>Leads / month</th><th>Message</th><th>Received</th><th>Status</th></tr></thead>
     <tbody>${list.map((p) => `<tr><td><strong>${esc(p.company)}</strong></td><td>${esc(p.name)}<span class="sub">${esc(p.phone)}${p.email ? " · " + esc(p.email) : ""}</span></td>
       <td>${esc(p.dealer_type)}</td><td class="num">${esc(p.monthly_leads || "–")}</td><td>${esc(p.message || "–")}</td><td class="num">${when(p.created_at)}</td>
@@ -436,7 +450,7 @@ async function pilots(view) {
     const s = e.target.closest("[data-pilot]"); if (!s) return;
     try { await api(`/admin/pilot-requests/${s.dataset.pilot}/status`, { method: "POST", body: { status: s.value } }); toast("Updated"); }
     catch (ex) { toast(ex.message, { error: true }); }
-  });
+  }, { signal: r.signal });
 }
 
 // ───────── start ─────────
