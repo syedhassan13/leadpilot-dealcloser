@@ -109,6 +109,20 @@ audit_log = Table(
 )
 
 
+pilot_requests = Table(                                    # dealers asking to try LeadPilot (landing page)
+    "dc_pilot_requests", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String(80), nullable=False),
+    Column("company", String(120), nullable=False),
+    Column("phone", String(30), nullable=False),
+    Column("email", String(120)),
+    Column("dealer_type", String(20)),                    # property | car | both
+    Column("monthly_leads", String(20)),
+    Column("message", Text),
+    Column("status", String(20), default="new"),          # new | contacted | closed
+    Column("created_at", DateTime(timezone=True)),
+)
+
 rate_limits = Table(                                       # audit 6.1: shared, restart-proof counters
     "dc_rate_limits", metadata,
     Column("key", String(64), primary_key=True),
