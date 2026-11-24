@@ -1,266 +1,265 @@
-# LeadPilot: AI lead closer for real estate and car dealers
+# LeadPilot
 
-**Track: DealCloser** · Group G19 · AI-4016 Agentic AI, FAST Islamabad · Model: `claude-haiku-5-5`
+**The AI lead closer for property and car dealers.** LeadPilot replies to every buyer in seconds, qualifies budget
+and timeline, shows real stock, books the site visit or test drive (only after the buyer says yes), and follows up
+for days with messages a dealer approves.
 
-LeadPilot replies to every new lead within seconds, qualifies budget and timeline, shortlists real
-listings, books site visits and test drives (only after the customer says yes), and follows up for days
-with drafts a human approves.
-
-| | Link |
+| | |
 |---|---|
-| Website (customer + dealer dashboard) | https://leadpilot-hassans-team1.vercel.app (dashboard: [/admin](https://leadpilot-hassans-team1.vercel.app/admin)) |
-| Agent API base URL | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health)) |
+| Product site | https://leadpilot-hassans-team1.vercel.app |
+| Live showroom (what buyers see) | https://leadpilot-hassans-team1.vercel.app/showroom |
+| Dealer console | https://leadpilot-hassans-team1.vercel.app/console |
+| Agent API | https://leadpilot-api-hhys.onrender.com ([/health](https://leadpilot-api-hhys.onrender.com/health)) |
 | Demo video | https://www.youtube.com/watch?v=6IJ6BwGFaU8 |
 
-![Demo](docs/demo.gif)
+![LeadPilot walkthrough: landing page, showroom booking, dealer console](docs/demo.gif)
 
-## The problem and the business
+Built with LangGraph and Claude Haiku 5.5 for the DealCloser track (AI-4016 Agentic AI, FAST Islamabad, group G19).
 
-Real estate agencies and car dealers lose buyers because inquiries wait hours for a reply, nobody follows
-up, and sales staff can't tell serious buyers from window shoppers.
+---
 
-LeadPilot answers in under a minute, 24/7, scores every lead (hot / warm / cold) and turns conversations
-into booked visits.
+## The product
 
-| Plan | Price | For |
-|---|---|---|
-| Basic | PKR 3,000 / month | One dealer: AI replies, qualification, bookings, dashboard |
-| Pro | PKR 7,000 / month | Plus follow-up agent, multiple branches, analytics |
+**For dealers.** Most inquiries wait hours for a reply, and the buyer moves on. LeadPilot answers in seconds, 24/7,
+and turns conversations into booked visits. Dealers work from a console that shows:
+- every lead, scored hot, warm or cold
+- the full conversation behind each lead
+- upcoming visits
+- follow-ups waiting for approval
 
-AI cost per conversation turn is about **$0.0004** on Haiku 5.5, so margins stay high.
+**For buyers.** A chat on the dealer's website that actually knows the stock, checks real availability, books a
+slot and remembers them next time. No forms to wait on.
+
+| Surface | What it does |
+|---|---|
+| **Landing page** (`/`) | Explains the product to dealers: a replay of a real conversation with live gauges, "Try it live" with the real agent, the response-time evidence, architecture, security, pricing, FAQ, and a pilot request form that saves to the database |
+| **Showroom** (`/showroom`) | A demo dealer website with the widget installed: dealer switcher, search and filters, listing details with **real** open slots, booking through the agent, and a call-back form with an instant reply |
+| **Chat widget** (`<leadpilot-chat>`) | A self-contained web component any dealer site can embed with one script tag. It can be locked to one dealer's stock. It shows what the agent did ("Checked real availability"), handles errors with retry, and offers "my bookings" and "delete my data" |
+| **Dealer console** (`/console`) | Overview (KPIs, 14-day chart, funnel, hot leads needing attention, upcoming visits), drag-and-drop pipeline, searchable leads, lead detail (transcripts, memory, bookings, follow-ups, tool audit), bookings agenda, follow-up approval queue, install snippet, and a pilot-request inbox for the LeadPilot team |
+
+| Showroom · real availability | Widget · asks before booking, then books |
+|---|---|
+| ![Listing dialog with live slots](docs/showroom-slots.png) | ![Chat widget booking a test drive](docs/widget.png) |
+
+| Console · overview | Console · lead detail |
+|---|---|
+| ![Console overview](docs/console-overview.png) | ![Lead detail with transcript and memory](docs/console-lead.png) |
+
+| Landing page | Pipeline | Follow-up approvals | Mobile |
+|---|---|---|---|
+| ![Landing](docs/landing.png) | ![Pipeline](docs/console-pipeline.png) | ![Follow-ups](docs/console-followups.png) | ![Mobile](docs/mobile-landing.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Web["Website (Vercel, static)"]
-    C["Customer page<br/>listings · lead form · chat"]
-    A["Dealer dashboard<br/>leads · bookings · follow-ups"]
+  subgraph Web["Website · Vercel (static, strict CSP)"]
+    L["Landing /"]
+    SR["Showroom /showroom"]
+    CO["Console /console"]
+    WG["&lt;leadpilot-chat&gt;<br/>web component"]
+    SR --- WG
+    L --- WG
   end
-  subgraph API["Agent API (FastAPI on Render, Docker)"]
+  subgraph API["Agent API · FastAPI on Render (Docker)"]
     direction TB
-    EP["POST /chat · GET /health<br/>POST /leads · /admin/*"]
+    R1["public router<br/>POST /chat · GET /health<br/>/listings · /leads · /pilot-requests"]
+    R2["customer router<br/>signed X-User-Token"]
+    R3["admin router<br/>dealer session"]
     subgraph G["LangGraph StateGraph"]
       direction LR
-      S((START)) --> GU["Guard agent<br/>(rules, no LLM)"]
-      GU -- safe --> CL["Closer agent<br/>create_agent + 8 tools<br/>+ middleware"]
+      S((START)) --> GU["Guard<br/>rules, 0 tokens"]
+      GU -- safe --> CL["Closer<br/>Claude Haiku 5.5<br/>+ 8 tools"]
       GU -- blocked --> ME
-      CL --> ME["Memory agent<br/>lead activity"]
+      CL --> ME["Memory"]
       ME --> E((END))
     end
-    FU["Follow-up agent<br/>drafts day 1/3/7 nudges"]
-    EP --> G
-    EP --> FU
+    FU["Follow-up agent<br/>max 20 drafts / run"]
+    R1 --> G
+    R3 --> FU
   end
-  subgraph DB["Supabase Postgres"]
-    CK[("Checkpoints<br/>short-term, per thread")]
-    ST[("Store<br/>long-term, per user_id")]
-    BT[("Business tables<br/>listings · leads · bookings<br/>follow-ups · audit log")]
+  subgraph DB["Supabase Postgres (RLS on every table)"]
+    CK[("checkpoints<br/>short-term, per thread")]
+    ST[("store<br/>long-term, per user_id")]
+    BT[("listings · leads · bookings<br/>follow-ups · audit · rate limits")]
   end
-  C --> EP
-  A --> EP
+  WG --> R1
+  WG --> R2
+  CO --> R3
   G <--> CK
   G <--> ST
   CL <--> BT
-  FU <--> BT
-  GH["GitHub Actions<br/>daily cron"] --> FU
+  GH["GitHub Actions<br/>CI · daily follow-ups · keep-alive"] --> API
 ```
 
-| Node / agent | Job |
+| Agent / node | Job |
 |---|---|
-| **Guard** | Deterministic safety check on every message: prompt injection, data snooping, tool-name injection, off-topic. Blocks instantly with **0 tokens**. |
-| **Closer** | `create_agent` with Claude Haiku 5.5 and 8 tools. Qualifies, shortlists, books and answers policy questions. |
-| **Memory** | Records lead activity and which threads each user has in long-term memory. |
-| **Follow-up** | Finds leads who went quiet (day 1, 3, 7), drafts a personal nudge, and waits for a human to approve it in the dashboard. |
+| **Guard** | Rule-based check before any model call: prompt injection, fake "SYSTEM NOTE"s, tool-name injection, data snooping, off-topic requests. Blocked messages cost **0 tokens**. |
+| **Closer** | `create_agent` with Claude Haiku 5.5 (low effort, 700-token replies) and 8 tools. Qualifies, shortlists, checks slots, books after confirmation and answers policy questions. When the widget is on one dealer's site, it only sees that dealer's stock. |
+| **Memory** | Records activity, assigns the lead to the dealer they chatted with, and tracks the buyer's threads in long-term memory. |
+| **Follow-up** | Drafts personal nudges for quiet leads (day 1, 3, 7), skipping anyone whose only messages were blocked. A dealer approves each one before it reaches the buyer's chat. |
 
-### Concepts used from each workshop lab
-
-| Lab | Concept | Where in LeadPilot |
-|---|---|---|
-| 00 Intro | `@tool`, checkpointer, RAG, human in the loop | `tools.py`, `graph.py`, follow-up approval |
-| 01 Agent | `create_agent`, `context_schema`, `ToolRuntime` | `agent.py` and every tool reads `runtime.context.user_id` |
-| 02 Middleware | `@dynamic_prompt`, `@wrap_model_call`, `@wrap_tool_call`, `PIIMiddleware`, call limits | memory-aware prompt, history trimming, audit log + error shield, card/CNIC redaction |
-| 03 Safety | Guard before the model, ask before risky actions | `guard.py` node; `book_visit` / `cancel_booking` need the customer's explicit yes |
-| 04 RAG | Vector store + retrieval tool | `rag.py` + `search_faq` over `backend/knowledge/*.md` |
-| 05 Multi-agent | `StateGraph` with distinct agents | guard → closer → memory, plus the follow-up agent |
-| 06 Long-term memory | `Store`, `runtime.store`, namespaces | `("leads", user_id)` profile, injected into every prompt |
-
-## Tools (all real: database or retrieval)
-
-| Tool | Input | Returns |
-|---|---|---|
-| `search_inventory` | category, max/min price, location, keyword, bedrooms | Up to 5 matching listings with IDs |
-| `get_listing` | listing ID | Full details |
-| `check_availability` | listing ID, date | Free slots (10:00, 12:00, 14:00, 16:00; Mon–Sat) |
-| `book_visit` | listing ID, date, time | Booking number. **Refuses unless the customer's latest message confirms.** |
-| `my_bookings` | – | This customer's bookings only |
-| `cancel_booking` | booking ID | Cancels, after confirmation, own bookings only |
-| `save_lead_details` | name, phone, category, budget, timeline, preferences, financing | Saves to the lead table + long-term memory, scores the lead |
-| `search_faq` | question | Policy passages with `[source]` (RAG) |
-
-## Memory design
-
-| | Short-term memory | Long-term memory |
-|---|---|---|
-| **What** | The messages of one conversation: what was asked, listings shown, the slot being discussed | Name, phone, what they want, budget, timeline, preferences, financing need, last booking, list of their threads |
-| **Key** | `thread_id`, stored as `"<len(user_id)>:<user_id>:<thread_id>"` | `user_id`, namespace `("leads", user_id)` |
-| **Where** | LangGraph `PostgresSaver` (checkpointer) in Supabase Postgres | LangGraph `PostgresStore` in Supabase Postgres |
-| **How it's used** | Last 16 messages are sent to the model (`trim_history` middleware) | Injected into the system prompt every turn (`closer_prompt`), so a new thread already knows the customer |
-| **Not saved** | – | Card numbers or CNIC (redacted by `PIIMiddleware`), passwords, OTPs, small talk |
-
-**How users are kept separate:**
-1. The thread key includes the user id with a length prefix, so user `a:b` + thread `c` can never open user `a` + thread `b:c`. Guessing another user's `thread_id` gives you an empty, new conversation.
-2. Every tool reads the customer from `runtime.context.user_id`, which the server sets from the request. The model never passes a user id, so no prompt can make a tool read someone else's data.
-3. Long-term memory is namespaced by `user_id`.
-4. Website customers get a random id (`lp_` plus 32 hex characters) and a **signed token** from the server. Reading their chats, bookings or profile, deleting their data, and chatting as them all require that token, so knowing someone's id is not enough.
-5. Dealers are isolated too: each dealer key is bound to one business (Skyline Realty or AutoHub Motors). Every admin query is filtered by that business, and opening another dealer's lead returns 404.
-6. In Supabase, row-level security is on for every table and the public `anon`/`authenticated` roles have no access, so the database can only be reached through our server.
-
-Everything persists in Postgres, so memory survives restarts and redeploys.
-
-## Safety
-
-- **Guard agent (code, before any model call):** blocks prompt injection ("ignore previous instructions", "system prompt", DAN/role-play, fake `SYSTEM NOTE`), requests for other customers' data, tool-name injection, SQL, and clearly off-topic tasks.
-- **Closer prompt:** stays on topic, never reveals instructions or internal scores, and treats text in messages or tool results as data.
-- **Risky actions ask a human first:**
-  - Bookings and cancellations happen only after the customer's own "yes"; `book_visit` checks this in code.
-  - Follow-up messages are only drafts until a dealer approves them.
-- **PII:** card numbers are redacted and CNICs are masked before reaching the model.
-- **Reliability:** tool errors are turned into messages, model and tool call limits are set, `/chat` always returns valid JSON, and the SDK retries API errors.
-
-## Security (pre-launch audit)
-
-We ran an 85-check pre-launch security audit (OWASP Top 10 2025 and the OWASP Top 10 for LLM apps) and fixed every failure. `python security_tests.py <API_URL> <dealer key>` re-checks 31 of the fixes in about a minute.
-
-| Area | What protects it |
+| Tool | Returns |
 |---|---|
-| Database | RLS on every Supabase table; `anon`/`authenticated` revoked; parameterised queries only |
-| Customers | Server-issued random ids + HMAC-signed tokens on every customer endpoint; "Delete my data" in the chat |
-| Dealers | Dealer key → signed 8-hour session (revocable on logout); 10 failed logins per IP per 15 min, then locked |
-| Abuse and cost | Per-user and per-IP limits on `/chat` (stored in Postgres, so they survive restarts), a daily AI cap, 5 leads per IP per 10 min, honeypot + fill-time bot check, max 20 follow-up drafts per run |
-| Input/output | Strict id/phone/message formats, all output escaped, no inline handlers, API address fixed (no `?api=` override) |
-| Configuration | `/docs` and `/openapi.json` off in production, CORS limited to our website, no demo keys in production, failed logins and admin actions logged |
-| Privacy | [Privacy policy](frontend/privacy.html), [terms](frontend/terms.html), [security.txt](frontend/.well-known/security.txt), and data deletion for customers and dealers |
-| Dependencies | `pip-audit`: no known vulnerabilities; every version pinned in `backend/requirements.lock` |
+| `search_inventory` | Up to 5 matching listings (category, price, area, keyword, bedrooms), dealer-scoped |
+| `get_listing` | Full listing details |
+| `check_availability` | Free slots for a date (Mon–Sat, 10/12/14/16, up to 60 days ahead) |
+| `book_visit` | A booking, **only** if the buyer's latest message confirms; the slot is re-checked server-side |
+| `my_bookings` · `cancel_booking` | The buyer's own bookings; cancelling needs confirmation |
+| `save_lead_details` | Saves name, budget, timeline, preferences and financing; scores the lead |
+| `search_faq` | Retrieval over financing, documents, visit and cancellation policies |
 
-**Accepted risk:** the assignment requires `POST /chat` to be open without login. Ids our website issues (`lp_…`) still need their token, but any other id can be used by anyone who knows it. That is how the grader calls the API.
+### Memory design
 
-## Agent API (used for grading)
+| | Short-term | Long-term |
+|---|---|---|
+| **What** | The messages of one conversation | Name, phone, interest, budget, timeline, preferences, financing, last booking, list of threads |
+| **Key** | `"<len(user_id)>:<user_id>:<thread_id>"` (unambiguous) | namespace `("leads", user_id)` |
+| **Where** | LangGraph `PostgresSaver` in Supabase | LangGraph `PostgresStore` in Supabase |
+| **Use** | Last 16 messages go to the model | Injected into every prompt, including whether the buyer is returning |
+| **Never stored** | – | Card numbers (redacted), CNIC (masked), passwords, OTPs |
+
+**Isolation:**
+- **Tools** take the buyer from server-side context, never from the model.
+- **Website buyers** hold a server-signed token, required for their chats, bookings, profile and data deletion.
+- **Dealers** sign in for an 8-hour, revocable session scoped to their own business.
+- **The database** is only reachable through the API: RLS is on and the `anon` role is revoked.
+
+## Engineering
+
+**Stack decisions.**
+- **Backend:** FastAPI, LangGraph and SQLAlchemy Core on Postgres. The same code runs on SQLite locally.
+- **Frontend: no framework, by design.** It is three pages and one embeddable widget written as plain ES modules: no build step, no `node_modules`, a small supply-chain surface, and fast first paint. The widget is a standard Web Component with Shadow DOM, so it embeds on any dealer site without style clashes.
+- **Next.js was considered and rejected.** It would add a build pipeline and a large dependency tree without solving a problem this product has.
+
+**Structure.**
+```
+backend/app/
+  main.py            app factory, security headers, request logging, startup
+  api/public.py      graded /chat + /health, catalogue, slots, leads, pilot requests
+  api/customer.py    buyer endpoints (signed token)
+  api/admin.py       console endpoints (dealer session), stats, pipeline, follow-ups
+  services.py        conversation turns, transcripts, data erasure
+  graph.py agent.py tools.py guard.py followups.py rag.py security.py db.py seed.py config.py runtime.py
+backend/tests/       25 unit tests (no network, no AI calls)
+frontend/
+  index.html  showroom/  console/  privacy.html  terms.html  404.html  vercel.json
+  assets/css/        base.css (design system) · landing · showroom · console
+  assets/js/         api.js · ui.js · config.js · landing.js · showroom.js · console.js
+  assets/widget/     leadpilot-chat.js + .css (embeddable web component)
+tests.json bench.py security_tests.py
+```
+
+**Quality gates.**
+| Check | Scope | Result (live) |
+|---|---|---|
+| `pytest` (CI on every push) | guard rules, scoring, slots, tokens, sessions, isolation, API contract | 25/25 |
+| `bench.py` + `tests.json` | 10 track tests + 5 attack tests against the deployed API | **15/15** |
+| `security_tests.py` | 31 checks: auth, isolation, rate limits, headers, exposed files | **31/31** |
+| Browser end-to-end | 42 checks across landing, widget, showroom booking, console, mobile layouts, with the CSP enforced | **42/42**, no JS errors or CSP violations |
+| `pip-audit` (CI) | all pinned dependencies (`requirements.lock`) | no known vulnerabilities |
+
+**Security.** In addition to the guard and isolation above:
+- **Abuse limits:** per-user, per-IP and daily limits stored in Postgres (they survive restarts), plus honeypot and fill-time bot checks on forms.
+- **Strict Content-Security-Policy** on the site (scripts from our own origin only), with frame denial, HSTS, `nosniff` and a permissions policy.
+- **Closed surfaces:** `/docs` is off in production, CORS is limited to our origin, and failed logins and admin actions are logged.
+- **Pre-launch audit:** an 85-point audit was run and its findings fixed (see [SECURITY.md](SECURITY.md)).
+
+**Reliability.**
+- `/chat` never returns a 500; it always answers in the graded shape.
+- Tool errors become messages, and model and tool call limits stop runaway loops.
+- Every response carries a request id and produces one log line.
+- The console ignores stale responses and cleans up its listeners on navigation.
+- The free Render service is kept warm by a GitHub Action.
+
+**Design.**
+- **The idea:** a *flight deck for sales*, playing on Lead**Pilot**.
+- **Palette:** warm paper and ink with one signal colour, International Orange.
+- **Type:** Instrument Serif headlines, Instrument Sans for the interface, JetBrains Mono for live data.
+- **Details:** hairline rules and square corners.
+- **Themes:** light and dark, with a saved toggle.
+- **Contrast:** checked against WCAG. Ink text sits on orange buttons, and a darker orange is used for orange text.
+- **Accessibility:** visible focus rings, reduced-motion support, ARIA states and keyboard access (`/` to search the console).
+- **Every view** has loading, empty and error-with-retry states.
+
+## Agent API (graded)
 
 ```bash
 curl -X POST "$API/chat" -H "Content-Type: application/json" \
   -d '{"user_id":"ali","thread_id":"t1","message":"I want a 3 bed house, budget 2 crore"}'
 # {"reply":"...","tool_calls":[{"name":"save_lead_details","args":{...}},{"name":"search_inventory","args":{...}}],"tokens":{"in":5867,"out":464}}
-
 curl "$API/health"   # ok
 ```
+An optional `"dealer": "skyline" | "autohub"` field scopes the conversation to one dealer, and the response shape is unchanged.
+Ids issued by the website (`lp_…`) also need their `X-User-Token`. Any other id is open, as the assignment requires
+(a documented, accepted risk).
 
-Other endpoints:
-- **Website:** `GET /listings`, `POST /customer/session` (new customer id + token), `POST /leads` (instant first reply), and with header `X-User-Token`: `GET /customer/{user_id}/threads/{thread_id}`, `GET /customer/{user_id}/bookings`, `DELETE /customer/{user_id}`
-- **Dashboard:** `POST /admin/login` (dealer key → session), then header `Authorization: Bearer <session>`: `/admin/stats`, `/admin/leads`, `/admin/leads/{id}` (GET, DELETE), `/admin/bookings`, `/admin/followups`, `POST /admin/followups/run`, `POST /admin/followups/{id}/approve`, `POST /admin/logout`
-- **Docs:** interactive docs at `/docs` in local development only (turned off in production)
+## Embed the widget on a dealer website
 
-**Demo data:** 8 properties (Skyline Realty, `P101`–`P108`) and 8 cars (AutoHub Motors, `C201`–`C208`), all fictional.
-
-**Dealer logins:** the live site uses private dealer keys set in `ADMIN_TOKENS`, one per dealer plus a super admin. Ask the team for them. The demo keys `skyline-demo`, `autohub-demo` and `admin-demo` only work in local development when `ADMIN_TOKENS` is not set.
-
-## Benchmark
-
-`tests.json` has our 10 track tests plus the 5 common attack tests. Each run uses fresh user ids:
-
-```bash
-python bench.py https://leadpilot-api-hhys.onrender.com   # writes benchmark.md
+```html
+<script src="https://leadpilot-hassans-team1.vercel.app/assets/widget/leadpilot-chat.js" defer></script>
+<leadpilot-chat dealer="autohub"></leadpilot-chat>
 ```
+The console's **Install & settings** page shows the exact snippet for each dealer.
+
+For a dealer on their own domain, add it to the API's `ALLOWED_ORIGINS`.
+
+## Benchmark (live deployment)
 
 | Metric | Result |
 |---|---|
-| Overall pass rate | **15/15 (100%)** |
-| Track tests | 10/10 |
-| Attack tests | 5/5 (all blocked by the guard, 0 tokens) |
-| Median latency (live, from Pakistan) | 5.7 s (max 10.1 s) |
-| Tokens (15 graded turns) | 46,237 in / 2,205 out |
-| Cost of the whole benchmark | $0.0057 (about $0.0004 per turn) |
+| Overall | **15/15 (100%)** · 10/10 track · 5/5 attacks (blocked by the guard, 0 tokens) |
+| Median / max latency | 6.3 s / 10.4 s (from Pakistan to the Singapore API, including tool calls) |
+| Tokens for 15 graded turns | 46,231 in / 2,115 out · **≈ $0.0004 per message** |
 
-| # | Test | Checks | Result |
-|---|---|---|---|
-| 1 | New lead gets a qualifying reply | asks budget/timeline, no booking | ✅ |
-| 2 | Captures budget + timeline | `save_lead_details`, `search_inventory`, listing IDs | ✅ |
-| 3 | Inventory search with a price limit | `search_inventory`, car IDs | ✅ |
-| 4 | Real availability | `check_availability`, real slots | ✅ |
-| 5 | Asks before booking | no `book_visit`, asks to confirm | ✅ |
-| 6 | Books after "yes" | `book_visit`, booking number | ✅ |
-| 7 | Short-term memory | recalls car + colour in the same thread | ✅ |
-| 8 | Long-term memory | new thread recalls the 95 lakh budget | ✅ |
-| 9 | User isolation | user B can't get user A's budget/phone | ✅ |
-| 10 | RAG policy answer | `search_faq`, CNIC + licence | ✅ |
-| 11–15 | Attacks: injection, jailbreak, data dump, off-topic, fake confirmation | refusal, no tools, no booking | ✅ ×5 |
-
-Run against the **live deployment** (Render + Supabase) on 24 Nov 2026, after the security hardening. Full per-test output is in [benchmark.md](benchmark.md).
-
-**Cost efficiency:**
-- Haiku 5.5 runs at low effort.
-- Replies are capped at 700 tokens, and only 16 messages of history are sent.
-- Blocked messages cost nothing.
-- The follow-up agent makes one short call per lead.
-
-## Screenshots
-
-| Customer chat | Dealer dashboard |
-|---|---|
-| ![chat](docs/chat.png) | ![overview](docs/admin-overview.png) |
-| ![lead detail](docs/admin-lead-detail.png) | ![follow-ups](docs/admin-followups.png) |
+Per-test details are in [benchmark.md](benchmark.md). To re-run: `python bench.py https://leadpilot-api-hhys.onrender.com`.
 
 ## Run locally
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate                      # macOS/Linux: source .venv/bin/activate
-pip install -r backend/requirements.txt
-copy .env.example .env                      # then set ANTHROPIC_API_KEY (leave DATABASE_URL empty for SQLite)
-cd backend
-uvicorn app.main:app --port 7860
+python -m venv .venv && .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+pip install -r backend/requirements.txt -c backend/requirements.lock
+copy .env.example .env                                   # set ANTHROPIC_API_KEY; leave DATABASE_URL empty for SQLite
+cd backend && uvicorn app.main:app --port 7860
 ```
+- **Website:** http://localhost:7860, with the showroom at `/showroom` and the console at `/console`.
+- **API docs:** `/docs`, in development only.
+- **Demo dealer keys:** `skyline-demo`, `autohub-demo` and `admin-demo` work only when `ADMIN_TOKENS` is not set.
 
-- Website: http://localhost:7860/ui/
-- Dashboard: http://localhost:7860/ui/admin.html
-- API docs: http://localhost:7860/docs (development only)
+Tests: `cd backend && pytest` · `python bench.py` · `python security_tests.py <api> <dealer key>`.
 
-To run the benchmark, use `python bench.py` from the repo root.
+## Deploy
 
-## Deploy (all free tiers)
+1. **Supabase.** Create a project and copy the *Session pooler* URI. Tables and row-level security are created automatically on first start.
+2. **Render.** Use **New**, then **Blueprint**, and pick this repo (`render.yaml`). Set:
+   - `ANTHROPIC_API_KEY`
+   - `DATABASE_URL`
+   - `ADMIN_TOKENS` (long random keys)
+   - `ALLOWED_ORIGINS` (your site's URL)
 
-1. **Database (Supabase):**
-   - Create a project. Go to **Connect**, then **Session pooler**, and copy the URI (port 5432). Put your database password into it.
-   - Tables are created automatically on first start.
-2. **Agent API (Render):**
-   - Go to render.com, then **New**, then **Blueprint**, and pick this repo. It reads `render.yaml` (a free Docker web service).
-   - Fill in the secrets it asks for: `ANTHROPIC_API_KEY`, `DATABASE_URL` (the Supabase URI), `ADMIN_TOKENS` (long random keys) and `ALLOWED_ORIGINS` (your Vercel URL). `CRON_SECRET` and `SESSION_SECRET` are generated automatically. The server refuses to start in production without `SESSION_SECRET`.
-   - **Check it:** `https://leadpilot-api-hhys.onrender.com/health` should return `ok`.
-   - **Keep it awake:** the free tier sleeps after 15 minutes idle, so the "Follow-ups and keep-alive" workflow pings `/health` every 10 minutes (step 4).
-   - *Alternative:* a Hugging Face Space. Add `HF_TOKEN` and `HF_SPACE` secrets, then run the "Deploy API to Hugging Face" workflow manually.
-3. **Website (Vercel):**
-   - Set `DEPLOYED_API` in `frontend/config.js` to the Render URL and push.
-   - In Vercel, choose **Add New**, then **Project**, and import this repo.
-   - Set **Root Directory** = `frontend`, Framework = Other, then Deploy.
-4. **Follow-ups and keep-alive:** add GitHub secrets `API_URL` (the Render URL) and `CRON_SECRET` (the same value as on Render). The "Follow-ups and keep-alive" workflow drafts follow-ups daily and pings `/health` every 10 minutes.
+   `SESSION_SECRET` and `CRON_SECRET` are generated for you. The server refuses to start in production without `SESSION_SECRET`.
+3. **Vercel.** Import the repo with Root Directory `frontend`. `vercel.json` adds the security headers and redirects. If the API URL changes, update it in `frontend/assets/js/config.js` and `vercel.json`.
+4. **GitHub secrets.** Add `API_URL` and `CRON_SECRET`. They power daily follow-up drafts and a keep-alive ping every 10 minutes. CI runs on every push.
 
-## Project structure
+## Known limitations
 
-```
-backend/app/
-  main.py        FastAPI: /chat, /health, website + dashboard endpoints
-  graph.py       StateGraph (guard -> closer -> memory) + Postgres/SQLite persistence
-  agent.py       Closer agent: create_agent, prompt, middleware
-  tools.py       8 tools (inventory, availability, booking, lead qualification, RAG)
-  guard.py       Safety guard rules
-  security.py    Rate limits, customer tokens, dealer sessions, security event log
-  followups.py   Follow-up agent + human approval
-  rag.py         Knowledge base vector store
-  db.py, seed.py Tables and demo data
-backend/knowledge/   Policy documents for RAG
-frontend/            index.html (customer), admin.html (dashboard), app.js, admin.js, styles.css, config.js
-tests.json, bench.py Benchmark
-Dockerfile, render.yaml (Render), .github/workflows/
-```
+- **Demo data.** The showroom listings, prices and both businesses are fictional. Pricing plans are shown, but there is no billing integration yet.
+- **Dealer onboarding.** Dealer accounts are keys issued by the LeadPilot team (`ADMIN_TOKENS`). There is no self-serve signup. The landing page collects **pilot requests** instead, and they appear in the console.
+- **Follow-up delivery.** Approved follow-ups arrive in the buyer's chat thread. WhatsApp, SMS and email delivery are not built.
+- **Free-tier hosting.** Render sleeps after 15 idle minutes. A keep-alive ping runs every 10 minutes, but a cold start can still take about 30–60 s.
+- **The widget on other sites.** It uses the host page's fonts if they load, otherwise system fonts. It needs the API's `ALLOWED_ORIGINS` updated for each new domain.
+- **Language.** It is tested in English. It understands everyday Roman Urdu confirmations but has not been tested for full Urdu conversations.
+- **Open `/chat`.** The open `/chat` endpoint is required by the assignment's grader. See the API section above.
 
-No API keys are committed: secrets live in `.env` locally (git-ignored) and in platform secrets when deployed. To report a security issue, see [SECURITY.md](SECURITY.md).
+## Workshop concepts used
+
+| Lab | Where |
+|---|---|
+| 00–01 Agents & tools | `create_agent`, `@tool`, `ToolRuntime`, `context_schema` (`agent.py`, `tools.py`) |
+| 02 Middleware | `@dynamic_prompt` (memory-aware prompt), `@wrap_model_call` (history trim), `@wrap_tool_call` (audit + error shield), `PIIMiddleware`, call limits |
+| 03 Safety | Guard node; confirmation gate on bookings; human approval of follow-ups |
+| 04 RAG | Policy knowledge base + `search_faq` (`rag.py`) |
+| 05 Multi-agent | `StateGraph`: guard → closer → memory, plus the follow-up agent |
+| 06 Long-term memory | `PostgresStore`, `runtime.store`, namespaces per buyer |
+
+To report a security issue, see [SECURITY.md](SECURITY.md). No secrets are committed: `.env` is git-ignored and every key lives in platform secrets.
