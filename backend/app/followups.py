@@ -8,6 +8,7 @@ from datetime import timedelta
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import insert, select, update
 
+from app import config
 from app.db import followups, get_lead, leads, now, one, rows, run, upsert_lead
 from app.tools import pkr
 
@@ -56,9 +57,12 @@ def draft_text(lead: dict, history: list, model) -> str:
 
 def run_followups(graph, model, thread_key, ignore_wait: bool = False, auto_send: bool = False,
                   business: str = "*") -> dict:
-    """Draft follow-ups for every due lead. Returns counts."""
+    """Draft follow-ups for due leads, most promising first, at most MAX_FOLLOWUPS_PER_RUN per run
+    (audit 11.2: a bounded number of AI calls per run, never one per lead in the whole database)."""
     drafted = 0
-    for lead in due_leads(ignore_wait, business):
+    due = due_leads(ignore_wait, business)
+    due.sort(key=lambda l: (l["score"] != "hot", l["score"] != "warm", not l["budget_pkr"], not l["name"]))
+    for lead in due[:config.MAX_FOLLOWUPS_PER_RUN]:
         cfg = {"configurable": {"thread_id": thread_key(lead["user_id"], lead["last_thread_id"])}}
         history = graph.get_state(cfg).values.get("messages", [])
         text = draft_text(lead, history, model)
@@ -68,7 +72,7 @@ def run_followups(graph, model, thread_key, ignore_wait: bool = False, auto_send
         drafted += 1
         if auto_send:
             send_followup(res.inserted_primary_key[0], graph, thread_key)
-    return {"drafted": drafted}
+    return {"drafted": drafted, "due": len(due), "cap": config.MAX_FOLLOWUPS_PER_RUN}
 
 
 def send_followup(followup_id: int, graph, thread_key, edited_text: str | None = None) -> dict | None:
