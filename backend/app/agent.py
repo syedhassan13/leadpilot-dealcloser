@@ -59,7 +59,14 @@ def _memory_block(user_id: str, store) -> str:
     facts.pop("budget_pkr", None)
     if lead.get("score"):
         facts["lead_score"] = f"{lead['score']} ({lead.get('status')})"
-    if not facts:
+    # Returning = had at least one earlier conversation. Details from a form they just filled don't count.
+    past = 0
+    if store is not None:
+        act = store.get(("leads", user_id), "activity")
+        past = len(act.value.get("threads", [])) if act else 0
+    facts["returning_customer"] = f"yes ({past} earlier conversation{'s' if past != 1 else ''})" if past else \
+        "no, this is their first conversation (don't say 'welcome back')"
+    if len(facts) == 1:
         return "- nothing yet (new customer)"
     return "\n".join(f"- {k}: {v}" for k, v in facts.items())
 
