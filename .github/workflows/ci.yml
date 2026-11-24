@@ -1,0 +1,39 @@
+# Runs on every push and pull request: backend unit tests, dependency audit and frontend syntax checks.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Install
+        run: pip install -r requirements.txt -c requirements.lock pytest==9.2.0 pip-audit
+      - name: Unit tests (no network, no AI calls)
+        run: python -m pytest
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: JavaScript syntax
+        run: for f in $(find frontend -name "*.js"); do node --check "$f" || exit 1; done
