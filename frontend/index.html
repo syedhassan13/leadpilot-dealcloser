@@ -1,124 +1,347 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LeadPilot</title>
-  <meta name="description" content="Find your next home or car in Islamabad. Get a reply in under a minute and book a site visit or test drive.">
+  <title>LeadPilot · The AI lead closer for property and car dealers</title>
+  <meta name="description" content="LeadPilot answers every buyer inquiry in seconds, qualifies budget and timeline, books site visits and test drives, and follows up for days. Built for real estate agencies and car dealers.">
+  <meta name="theme-color" content="#15140f">
+  <meta property="og:title" content="LeadPilot · Every lead answered before it goes cold">
+  <meta property="og:description" content="An AI sales agent that replies in seconds, qualifies, books visits and follows up.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/assets/img/mark.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/landing.css">
+  <script src="/assets/js/nojs.js"></script>
 </head>
 <body>
-<header class="topbar">
+<a class="sr-only" href="#main">Skip to content</a>
+
+<header class="site-header">
   <div class="wrap">
-    <a class="logo" href="./"><span class="logo-mark">L</span>LeadPilot</a>
-    <nav class="nav">
-      <a href="#listings">Listings</a>
-      <a href="#how" class="hide-sm">How it works</a>
-      <a href="#" id="nav-bookings">My bookings</a>
-      <a href="admin.html" class="btn small">Dealer login</a>
+    <a class="brand" href="/" aria-label="LeadPilot home"><img src="/assets/img/mark.svg" alt="" width="26" height="26">LeadPilot</a>
+    <nav class="nav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#engine">Under the hood</a>
+      <a href="#trust">Security</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/showroom/">Live showroom</a>
     </nav>
+    <div class="header-end">
+      <span class="status-pill" id="status"><span class="dot"></span>Checking agent…</span>
+      <a class="btn btn-ghost btn-sm" href="/console/">Dealer sign in</a>
+      <a class="btn btn-primary btn-sm" href="#pilot">Request a pilot</a>
+      <button class="btn btn-ghost btn-sm menu-btn" aria-expanded="false" aria-label="Open menu">Menu</button>
+    </div>
   </div>
 </header>
 
-<main class="wrap">
-  <div class="hero">
-    <div>
-      <span class="pill">⚡ Replies in under a minute, 24/7</span>
-      <h1>Find your next home or car in Islamabad.</h1>
-      <p>Tell us your budget and timeline. Our AI assistant shortlists matching properties from Skyline Realty and cars
-        from AutoHub Motors, answers financing questions and books your site visit or test drive.</p>
-      <div class="row">
-        <button class="btn primary" data-open-chat>💬 Chat now</button>
-        <a class="btn" href="#listings">Browse listings</a>
-      </div>
-      <div class="hero-stats">
-        <div><b id="stat-props">8</b><span>Properties</span></div>
-        <div><b id="stat-cars">8</b><span>Cars</span></div>
-        <div><b>&lt; 60 s</b><span>Reply time</span></div>
-      </div>
-    </div>
-
-    <form class="card form-card" id="lead-form">
-      <h3>Get a call back in under a minute</h3>
-      <p class="sub">Our assistant replies instantly. No spam, ever.</p>
-      <div class="field">
-        <label>I'm looking for</label>
-        <div class="seg" id="interest-seg">
-          <button type="button" data-v="property" class="on">🏠 Property</button>
-          <button type="button" data-v="car">🚗 Car</button>
+<main id="main">
+  <!-- ───────────── hero ───────────── -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">AI lead closer · real estate &amp; car dealers · Pakistan</p>
+        <h1 class="display">Every lead answered <em>before</em> it goes cold.</h1>
+        <p class="lede">LeadPilot replies to every buyer in seconds, day or night. It works out their budget and timeline, shows real stock, books the site visit or test drive, and follows up until they show up.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#pilot">Request a pilot <span class="arrow">→</span></a>
+          <a class="btn" href="/showroom/">Try it on a live showroom</a>
         </div>
+        <dl class="proof">
+          <div><dt>Median reply</dt><dd class="mono">5.7 s</dd></div>
+          <div><dt>Live benchmark</dt><dd class="mono">15/15</dd></div>
+          <div><dt>AI cost / message</dt><dd class="mono">≈ $0.0004</dd></div>
+        </dl>
       </div>
-      <div class="grid2">
-        <div class="field"><label for="f-name">Name</label><input id="f-name" required maxlength="80" placeholder="Ali Khan"></div>
-        <div class="field"><label for="f-phone">Phone / WhatsApp</label><input id="f-phone" required maxlength="30" placeholder="0300 1234567"></div>
-      </div>
-      <div class="field"><label for="f-msg">What do you need? (optional)</label>
-        <textarea id="f-msg" rows="2" maxlength="1000" placeholder="e.g. 3 bed house in DHA, budget 2 crore, buying in 2 months"></textarea></div>
-      <div class="hp" aria-hidden="true"><label for="f-website">Website</label><input id="f-website" tabindex="-1" autocomplete="off"></div>
-      <button class="btn primary" style="width:100%;justify-content:center" id="lead-submit">Get my instant reply</button>
-      <p class="hint consent">By submitting, you agree to our <a href="privacy.html">Privacy Policy</a> and <a href="terms.html">Terms</a>. Your messages are answered by an AI assistant.</p>
-    </form>
-  </div>
 
-  <section id="listings">
-    <div class="section-head">
-      <h2>Available now</h2>
-      <div class="tabs" id="tabs">
-        <button data-c="" class="on">All</button>
-        <button data-c="property">🏠 Property</button>
-        <button data-c="car">🚗 Cars</button>
-      </div>
+      <figure class="recorder" aria-label="Replay of a recorded LeadPilot conversation">
+        <div class="rec-head">
+          <span class="rec-title"><span class="rec-light" aria-hidden="true"></span>Flight recorder</span>
+          <span class="rec-id mono">LEAD #<span id="rec-lead">2741</span> · REPLAY</span>
+          <div class="rec-tabs" role="tablist" aria-label="Scenario">
+            <button role="tab" aria-selected="true" data-scenario="car">Car</button>
+            <button role="tab" aria-selected="false" data-scenario="property">Property</button>
+          </div>
+        </div>
+        <div class="rec-body">
+          <ol class="rec-log" id="rec-log" aria-live="off"></ol>
+          <aside class="gauges" aria-label="Lead telemetry">
+            <div class="gauge">
+              <span class="g-label">Lead score</span>
+              <svg class="dial" viewBox="0 0 120 70" aria-hidden="true">
+                <path d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke="currentColor" stroke-opacity=".18" stroke-width="8"/>
+                <path class="dial-hot" d="M85 18.7 A50 50 0 0 1 110 62" fill="none" stroke="#ff4f00" stroke-width="8"/>
+                <g class="needle" id="needle"><line x1="60" y1="62" x2="60" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="60" cy="62" r="5" fill="currentColor"/></g>
+              </svg>
+              <span class="g-value mono" id="g-score">COLD</span>
+            </div>
+            <div class="gauge-row"><span class="g-label">Budget</span><span class="g-value mono" id="g-budget">—</span></div>
+            <div class="gauge-row"><span class="g-label">Timeline</span><span class="g-value mono" id="g-timeline">—</span></div>
+            <div class="gauge-row"><span class="g-label">Next action</span><span class="g-value mono" id="g-next">Qualify</span></div>
+            <div class="gauge-row"><span class="g-label">Elapsed</span><span class="g-value mono" id="g-clock">T+00:00</span></div>
+          </aside>
+        </div>
+        <figcaption class="rec-foot">
+          <span>Replay of a recorded conversation. Times are real agent latencies.</span>
+          <span class="rec-actions"><button class="btn btn-sm rec-replay" id="rec-replay">Replay</button><button class="btn btn-primary btn-sm" id="try-live">Try it live <span class="arrow">→</span></button></span>
+        </figcaption>
+      </figure>
     </div>
-    <div class="listings" id="listing-grid"><div class="empty">Loading listings…</div></div>
   </section>
 
-  <section id="how">
-    <div class="section-head"><h2>How it works</h2></div>
-    <div class="how">
-      <div class="card"><span class="step-no">1</span><b>Tell us what you want</b><p>Fill the form or start a chat. You get a reply within a minute.</p></div>
-      <div class="card"><span class="step-no">2</span><b>Get a shortlist</b><p>The assistant matches your budget, timeline and area to real listings.</p></div>
-      <div class="card"><span class="step-no">3</span><b>Book a visit</b><p>Pick a slot for a site visit or test drive. We confirm before booking.</p></div>
-      <div class="card"><span class="step-no">4</span><b>We stay in touch</b><p>Busy? We'll follow up on day 1, 3 and 7 so you never miss a deal.</p></div>
+  <!-- ───────────── 01 the cost of waiting ───────────── -->
+  <section class="section" id="why">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <span class="section-no mono">01</span>
+        <h2 class="h1">The deal is decided in the <em>first five minutes</em>. Most dealers reply the next day.</h2>
+      </header>
+      <div class="scale reveal" aria-label="Response time compared on a logarithmic scale">
+        <div class="scale-track">
+          <div class="scale-window" data-s="300" title="The 5-minute window"><span class="mono">5-minute window</span></div>
+          <div class="scale-mark lp" data-s="5"><span class="mk-line"></span><span class="mk-label"><strong>LeadPilot</strong><span class="mono">~5 seconds</span></span></div>
+          <div class="scale-mark avg" data-s="151200"><span class="mk-line"></span><span class="mk-label"><strong>Average B2B reply</strong><span class="mono">42 hours</span></span></div>
+        </div>
+        <ol class="scale-ticks mono" aria-hidden="true">
+          <li data-s="1">1s</li><li data-s="10">10s</li><li data-s="60">1m</li><li data-s="300">5m</li>
+          <li data-s="1800">30m</li><li data-s="3600">1h</li><li data-s="86400">1d</li><li data-s="172800">2d</li>
+        </ol>
+      </div>
+      <div class="why-grid reveal">
+        <div><span class="big mono">21×</span><p>Leads contacted within 5 minutes were 21 times more likely to qualify than leads contacted after 30 minutes.</p><cite>MIT / InsideSales, Lead Response Management study</cite></div>
+        <div><span class="big mono">42 h</span><p>The average first response time measured across 2,241 companies. Only a minority answered within the hour.</p><cite>Harvard Business Review, “The Short Life of Online Sales Leads”</cite></div>
+        <div><span class="big mono">24/7</span><p>Buyers browse property and cars at night and on weekends, exactly when sales teams are offline. LeadPilot isn't.</p><cite>Why we built LeadPilot</cite></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────── 02 how it works ───────────── -->
+  <section class="section section-alt" id="how">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <span class="section-no mono">02</span>
+        <h2 class="h1">One flight plan, <em>from hello to handshake.</em></h2>
+      </header>
+      <ol class="flightplan">
+        <li class="reveal">
+          <span class="wp mono">WP-1</span><h3 class="h3">Reply instantly</h3>
+          <p>A buyer fills your form or opens the chat on your site. The first answer arrives in seconds, in plain language, at 3 am or 3 pm.</p>
+          <code class="telemetry">first_response · 3.9 s</code>
+        </li>
+        <li class="reveal">
+          <span class="wp mono">WP-2</span><h3 class="h3">Qualify like your best rep</h3>
+          <p>It asks for budget, timeline, area or model and financing, two questions at a time, and scores every lead hot, warm or cold.</p>
+          <code class="telemetry">save_lead_details → score: hot</code>
+        </li>
+        <li class="reveal">
+          <span class="wp mono">WP-3</span><h3 class="h3">Book the visit</h3>
+          <p>It shows matching stock from your live inventory, checks real slots and books the site visit or test drive, only after the buyer says yes.</p>
+          <code class="telemetry">book_visit · confirmed #2</code>
+        </li>
+        <li class="reveal">
+          <span class="wp mono">WP-4</span><h3 class="h3">Follow up for days</h3>
+          <p>Buyers who go quiet get a personal nudge on day 1, 3 and 7. You approve every message before it is sent.</p>
+          <code class="telemetry">follow_up · awaiting approval</code>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ───────────── 03 under the hood ───────────── -->
+  <section class="section" id="engine">
+    <div class="wrap engine-grid">
+      <header class="section-head reveal">
+        <span class="section-no mono">03</span>
+        <h2 class="h1">Four agents. <em>One job:</em> close the lead.</h2>
+        <p class="lede">LeadPilot is a LangGraph multi-agent system on Claude. Every step is a separate agent with a narrow job, so it stays fast, cheap and predictable.</p>
+      </header>
+      <figure class="graph reveal" aria-label="Agent architecture">
+        <svg viewBox="0 0 640 400" role="img" aria-labelledby="graph-title">
+          <title id="graph-title">Messages pass through the Guard, then the Closer and its tools, then Memory. Blocked messages skip straight to Memory with a refusal. A Follow-up agent drafts nudges for quiet leads; a human approves them before they reach the buyer.</title>
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="currentColor"/></marker></defs>
+          <g class="g-edges" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ah)">
+            <path d="M80 116h30"/><path d="M262 116h28"/><path d="M442 116h28"/>
+            <path d="M376 142v50"/><path d="M356 192v-48" stroke-dasharray="3 4"/>
+            <path d="M186 90 C186 34, 546 34, 546 86" stroke-dasharray="3 4"/>
+            <path d="M546 142v166" stroke-dasharray="3 4"/>
+            <path d="M470 336h-28"/><path d="M290 336h-28"/>
+          </g>
+          <g class="g-nodes">
+            <rect x="10" y="94" width="70" height="44" rx="2"/><text x="45" y="121">Buyer</text>
+            <rect class="n-guard" x="110" y="90" width="152" height="52" rx="2"/><text x="186" y="112">Guard</text><text class="sub" x="186" y="129">rules · 0 tokens</text>
+            <rect class="n-closer" x="290" y="90" width="152" height="52" rx="2"/><text x="366" y="112">Closer</text><text class="sub" x="366" y="129">Claude Haiku 5.5</text>
+            <rect x="470" y="90" width="152" height="52" rx="2"/><text x="546" y="112">Memory</text><text class="sub" x="546" y="129">per buyer (user_id)</text>
+            <rect class="n-tools" x="276" y="192" width="180" height="68" rx="2"/><text x="366" y="216">8 tools</text><text class="sub" x="366" y="233">inventory · slots · booking</text><text class="sub" x="366" y="248">qualify · policy search</text>
+            <rect x="470" y="310" width="152" height="52" rx="2"/><text x="546" y="332">Follow-up</text><text class="sub" x="546" y="349">quiet leads · day 1/3/7</text>
+            <rect class="n-human" x="290" y="310" width="152" height="52" rx="2"/><text x="366" y="332">You approve</text><text class="sub" x="366" y="349">human in the loop</text>
+            <rect x="110" y="310" width="152" height="52" rx="2"/><text x="186" y="332">Buyer's chat</text><text class="sub" x="186" y="349">nudge delivered</text>
+          </g>
+          <text class="g-note" x="366" y="36">blocked → instant refusal</text>
+          <text class="g-note" x="576" y="230">quiet</text>
+        </svg>
+      </figure>
+      <dl class="specs reveal">
+        <div><dt>Model</dt><dd>Claude Haiku 5.5, low effort, 700-token replies</dd></div>
+        <div><dt>Short-term memory</dt><dd>Per conversation (thread), Postgres checkpointer</dd></div>
+        <div><dt>Long-term memory</dt><dd>Per buyer (user_id): budget, timeline, preferences</dd></div>
+        <div><dt>Knowledge</dt><dd>Financing, documents and visit policies via retrieval</dd></div>
+        <div><dt>Install</dt><dd>One <code>&lt;script&gt;</code> tag on your website</dd></div>
+        <div><dt>API</dt><dd><code>POST /chat</code> · <code>GET /health</code></dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ───────────── 04 console ───────────── -->
+  <section class="section section-dark" id="console">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <span class="section-no mono">04</span>
+        <h2 class="h1">Your sales floor, <em>at a glance.</em></h2>
+        <p class="lede">The dealer console shows every lead, its score and its full conversation, upcoming visits, and the follow-ups waiting for your approval.</p>
+      </header>
+      <figure class="console-shot reveal">
+        <img src="/assets/img/console.png" width="1440" height="900" loading="lazy" alt="The LeadPilot dealer console: KPIs, a 14-day activity chart, the lead pipeline and leads that need attention.">
+      </figure>
+      <ul class="console-points reveal">
+        <li><strong>Pipeline</strong><span>New → qualified → booked, with hot leads on top.</span></li>
+        <li><strong>Full context</strong><span>What the buyer said, what LeadPilot remembers, every tool it used.</span></li>
+        <li><strong>Approve follow-ups</strong><span>Edit or approve nudges before they are sent.</span></li>
+        <li><strong>Cost visibility</strong><span>Tokens and AI spend per dealer, in real time.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ───────────── 05 trust ───────────── -->
+  <section class="section" id="trust">
+    <div class="wrap trust-grid">
+      <header class="section-head reveal">
+        <span class="section-no mono">05</span>
+        <h2 class="h1">Built to be <em>trusted</em> with your customers.</h2>
+        <p class="lede">We ran an 85-point pre-launch security audit based on the OWASP Top 10 and the OWASP Top 10 for LLM apps, and fixed every finding.</p>
+      </header>
+      <ul class="checks reveal">
+        <li><strong>Attacks stopped before the AI</strong><span>Prompt injection, data snooping and off-topic requests are blocked in code, at zero cost.</span></li>
+        <li><strong>No booking without a yes</strong><span>Bookings and cancellations need the buyer's own confirmation, checked by the server.</span></li>
+        <li><strong>Every buyer isolated</strong><span>Signed tokens per buyer; each dealer only ever sees its own leads.</span></li>
+        <li><strong>Locked-down database</strong><span>Row-level security on every table; nothing reachable from the public internet.</span></li>
+        <li><strong>Rate limits and cost caps</strong><span>Per-buyer, per-IP and daily limits so nobody can run up your bill.</span></li>
+        <li><strong>Your buyers' data, their choice</strong><span>One-click data deletion, clear privacy policy, no ads or tracking.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ───────────── 06 pricing ───────────── -->
+  <section class="section section-alt" id="pricing">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <span class="section-no mono">06</span>
+        <h2 class="h1">Priced like <em>one</em> extra sale a year.</h2>
+      </header>
+      <div class="plans reveal">
+        <article class="plan">
+          <h3 class="h3">Basic</h3>
+          <p class="price"><span class="mono">PKR 3,000</span> / month</p>
+          <p class="muted">For a single showroom or agency office.</p>
+          <ul>
+            <li>24/7 AI replies on your website</li><li>Qualification and lead scoring</li>
+            <li>Live inventory, slots and bookings</li><li>Dealer console</li><li>Data deletion and privacy tools</li>
+          </ul>
+          <a class="btn" href="#pilot" data-plan="basic">Start a pilot</a>
+        </article>
+        <article class="plan plan-pro">
+          <span class="plan-flag mono">Most dealers</span>
+          <h3 class="h3">Pro</h3>
+          <p class="price"><span class="mono">PKR 7,000</span> / month</p>
+          <p class="muted">For dealers who lose buyers to slow follow-up.</p>
+          <ul>
+            <li>Everything in Basic</li><li>Follow-up agent: day 1, 3 and 7</li>
+            <li>Approve and edit every follow-up</li><li>Widget on several websites</li><li>Priority onboarding</li>
+          </ul>
+          <a class="btn btn-primary" href="#pilot" data-plan="pro">Start a pilot <span class="arrow">→</span></a>
+        </article>
+      </div>
+      <p class="plans-note muted small">Cancel any time before the next billing date. Buyers never pay to use LeadPilot.</p>
+    </div>
+  </section>
+
+  <!-- ───────────── 07 FAQ ───────────── -->
+  <section class="section" id="faq">
+    <div class="wrap faq-grid">
+      <header class="section-head reveal">
+        <span class="section-no mono">07</span>
+        <h2 class="h1">Questions dealers <em>ask us.</em></h2>
+      </header>
+      <div class="faq reveal">
+        <details><summary>Does LeadPilot replace my sales team?</summary><p>No. It takes the first conversation off their plate: replying, qualifying and booking. Your people meet buyers who are ready, and agree the final price at the visit.</p></details>
+        <details><summary>Will it make up prices or stock?</summary><p>No. Every listing, price and slot comes from your inventory through a tool call. If something isn't in your data, it says so. A person always confirms the final price.</p></details>
+        <details><summary>Can it book a visit by mistake?</summary><p>Bookings need the buyer's explicit "yes" in their latest message, checked in code, not just by the AI. Fake confirmations injected into the chat are blocked.</p></details>
+        <details><summary>How do I put it on my website?</summary><p>Add one script tag and one <code>&lt;leadpilot-chat dealer="…"&gt;</code> element. The console's Settings page gives you the exact snippet.</p></details>
+        <details><summary>What languages does it speak?</summary><p>It's tested in English and understands everyday Roman Urdu confirmations such as "haan" and "theek hai".</p></details>
+        <details><summary>What happens to my buyers' data?</summary><p>It's stored in an access-locked database, used only to serve the conversation and your console, and never sold. Buyers can delete their data with one click. See our <a href="/privacy.html">privacy policy</a>.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────── pilot request ───────────── -->
+  <section class="section section-dark" id="pilot">
+    <div class="wrap pilot-grid">
+      <div class="reveal">
+        <span class="section-no mono">08</span>
+        <h2 class="h1">Put LeadPilot on your <em>showroom floor.</em></h2>
+        <p class="lede">Tell us about your dealership. We'll set up a 14-day pilot on your stock and show you the leads it closes.</p>
+        <ul class="pilot-points mono">
+          <li>Set up in a day</li><li>No card needed for the pilot</li><li>Keep every lead it captures</li>
+        </ul>
+      </div>
+      <form class="pilot-form reveal" id="pilot-form" novalidate>
+        <div class="row2">
+          <div class="field"><label for="p-name">Your name</label><input class="input" id="p-name" name="name" required minlength="2" maxlength="80" autocomplete="name"></div>
+          <div class="field"><label for="p-company">Dealership</label><input class="input" id="p-company" name="company" required minlength="2" maxlength="120" autocomplete="organization"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="p-phone">Phone / WhatsApp</label><input class="input" id="p-phone" name="phone" required maxlength="30" inputmode="tel" autocomplete="tel" pattern="[0-9+()\- ]{5,30}"></div>
+          <div class="field"><label for="p-email">Email (optional)</label><input class="input" id="p-email" name="email" type="email" maxlength="120" autocomplete="email"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="p-type">You sell</label>
+            <select class="select" id="p-type" name="dealer_type" required><option value="property">Property</option><option value="car">Cars</option><option value="both">Both</option></select></div>
+          <div class="field"><label for="p-volume">Leads per month</label>
+            <select class="select" id="p-volume" name="monthly_leads"><option value="">Not sure</option><option>&lt;50</option><option>50-200</option><option>200-1000</option><option>1000+</option></select></div>
+        </div>
+        <div class="field"><label for="p-msg">Anything we should know? (optional)</label><textarea class="textarea" id="p-msg" name="message" maxlength="1000"></textarea></div>
+        <div class="hp" aria-hidden="true"><label for="p-website">Website</label><input id="p-website" name="website" tabindex="-1" autocomplete="off"></div>
+        <p class="field-error" id="pilot-error" role="alert"></p>
+        <button class="btn btn-primary" type="submit">Request my pilot <span class="arrow">→</span></button>
+        <p class="small form-note">We'll reply within one working day. By submitting you agree to our <a href="/privacy.html">privacy policy</a>.</p>
+        <div class="form-success" id="pilot-success" hidden tabindex="-1">
+          <span class="mono">✓ Request received</span>
+          <h3 class="h2">Thanks, we'll be in touch.</h3>
+          <p>Meanwhile, see LeadPilot working on a <a href="/showroom/">live showroom</a>.</p>
+        </div>
+      </form>
     </div>
   </section>
 </main>
 
-<footer><div class="wrap footer-row">
-  <span>LeadPilot, DealCloser track. Demo data only: listings, prices and businesses are fictional.</span>
-  <span class="footer-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="#" id="footer-delete">Delete my data</a> · <a href="/.well-known/security.txt">Security</a></span>
-</div></footer>
-
-<button class="btn primary chat-fab" id="chat-fab" data-open-chat>💬 Chat with LeadPilot</button>
-
-<div class="chat card" id="chat" aria-live="polite">
-  <div class="chat-head">
-    <span class="logo-mark">L</span>
-    <div class="who"><b>LeadPilot assistant</b><span id="chat-who"><span class="dot"></span>Online</span></div>
-    <button class="btn small ghost" id="chat-close" aria-label="Close chat">✕</button>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div><a class="brand" href="/"><img src="/assets/img/mark.svg" alt="" width="26" height="26">LeadPilot</a>
+        <p class="muted small footer-blurb">The AI lead closer for property and car dealers. Replies in seconds, books visits, follows up for days.</p></div>
+      <div><h4>Product</h4><ul><li><a href="#how">How it works</a></li><li><a href="#pricing">Pricing</a></li><li><a href="/showroom/">Live showroom</a></li><li><a href="/console/">Dealer console</a></li></ul></div>
+      <div><h4>Trust</h4><ul><li><a href="#trust">Security</a></li><li><a href="/privacy.html">Privacy policy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/.well-known/security.txt">Report a vulnerability</a></li></ul></div>
+      <div><h4>Developers</h4><ul><li><a href="https://github.com/syedhassan13/leadpilot-dealcloser">GitHub</a></li><li><a href="https://leadpilot-api-hhys.onrender.com/health">API status</a></li></ul></div>
+    </div>
+    <div class="footer-base"><span>© 2026 LeadPilot</span><span>Showroom listings are demo data.</span></div>
   </div>
-  <div class="chat-tools">
-    <button class="btn small" id="btn-new" title="Start a new conversation (long-term memory remembers you)">＋ New chat</button>
-    <button class="btn small" id="btn-bookings">📅 My bookings</button>
-    <button class="btn small" id="btn-switch" title="Demo: become a different customer">👤 Switch user</button>
-    <button class="btn small" id="btn-delete" title="Delete all your data">🗑 Delete my data</button>
-  </div>
-  <div class="msgs" id="msgs"></div>
-  <div class="suggest" id="suggest">
-    <button>I want a 3 bed house, budget 2 crore</button>
-    <button>Cars under 50 lakh?</button>
-    <button>Do you offer car financing?</button>
-  </div>
-  <form class="composer" id="composer">
-    <input id="chat-input" autocomplete="off" maxlength="2000" placeholder="Type your message…">
-    <button class="btn primary" id="send-btn">Send</button>
-  </form>
-</div>
+</footer>
 
-<div class="toast" id="toast"></div>
-
-<script src="config.js"></script>
-<script src="app.js"></script>
+<leadpilot-chat id="chat"></leadpilot-chat>
+<script src="/assets/widget/leadpilot-chat.js" defer></script>
+<script type="module" src="/assets/js/landing.js"></script>
 </body>
 </html>
