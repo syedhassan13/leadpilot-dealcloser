@@ -5,7 +5,7 @@ The same code runs on Postgres (deployed, Supabase/Neon) and SQLite (local dev).
 from datetime import datetime, timezone
 
 from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, MetaData, String, Table, Text,
-                        create_engine, insert, select, update)
+                        create_engine, delete, insert, select, text, update)
 
 from app import config
 
@@ -109,6 +109,23 @@ audit_log = Table(
 )
 
 
+rate_limits = Table(                                       # audit 6.1: shared, restart-proof counters
+    "dc_rate_limits", metadata,
+    Column("key", String(64), primary_key=True),
+    Column("count", Integer, nullable=False, default=0),
+    Column("expires_at", DateTime(timezone=True), index=True),
+)
+
+admin_sessions = Table(                                    # audit 2.5: expiring, revocable dealer sessions
+    "dc_admin_sessions", metadata,
+    Column("jti", String(64), primary_key=True),
+    Column("business", String(40), nullable=False),
+    Column("created_at", DateTime(timezone=True)),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("revoked", Integer, default=0),
+)
+
+
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -141,6 +158,32 @@ engine = _make_engine()
 
 def init_db():
     metadata.create_all(engine)
+
+
+def lock_down_supabase():
+    """Audit 4.5: Supabase exposes the public schema through its Data API to the `anon` and `authenticated`
+    roles. This app never uses that API (the server connects as the database owner), so turn RLS on for every
+    table and revoke those roles' access. Runs at every start, so tables created later are covered too."""
+    if not is_postgres():
+        return
+    with engine.begin() as c:
+        roles = {r[0] for r in c.execute(text("select rolname from pg_roles where rolname in ('anon','authenticated')"))}
+        tables = [r[0] for r in c.execute(text(
+            "select tablename from pg_tables where schemaname = 'public'"))]
+        for t in tables:
+            c.execute(text(f'alter table public."{t}" enable row level security'))
+            for role in roles:
+                c.execute(text(f'revoke all on table public."{t}" from {role}'))
+        for role in roles:
+            c.execute(text(f"alter default privileges in schema public revoke all on tables from {role}"))
+            c.execute(text(f"revoke all on all sequences in schema public from {role}"))
+
+
+def delete_customer(user_id: str):
+    """Audit 12.3: remove this customer's rows from every business table."""
+    with engine.begin() as c:
+        for table in (followups, bookings, chat_log, audit_log, leads):
+            c.execute(delete(table).where(table.c.user_id == user_id))
 
 
 def rows(stmt) -> list[dict]:
