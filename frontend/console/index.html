@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Console · LeadPilot</title>
+  <meta name="description" content="LeadPilot dealer console: leads, pipeline, bookings and follow-ups.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#15140f">
+  <link rel="icon" href="/assets/img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/console.css">
+  <script src="/assets/js/nojs.js"></script>
+</head>
+<body class="console-body">
+
+<!-- ───────── sign in ───────── -->
+<section class="login" id="login-view" hidden>
+  <div class="login-art" aria-hidden="true">
+    <a class="brand light" href="/"><img src="/assets/img/mark.svg" alt="" width="26" height="26">LeadPilot</a>
+    <div class="login-quote">
+      <p class="h1">Your sales floor, <em>at a glance.</em></p>
+      <p class="muted">Leads, conversations, visits and follow-ups, all in one place.</p>
+    </div>
+    <p class="mono login-foot">Sessions expire after 8 hours · signed &amp; revocable</p>
+  </div>
+  <div class="login-panel">
+    <form class="login-form" id="login-form" novalidate>
+      <p class="eyebrow">Dealer console</p>
+      <h1 class="h2">Sign in</h1>
+      <p class="muted">Use the dealer key LeadPilot gave you. Each dealer only sees its own leads.</p>
+      <div class="field"><label for="key">Dealer key</label>
+        <input class="input" id="key" type="password" required autocomplete="current-password" spellcheck="false"></div>
+      <p class="field-error" id="login-error" role="alert"></p>
+      <button class="btn btn-primary" type="submit">Sign in <span class="arrow">→</span></button>
+      <p class="small muted">Lost your key? Contact LeadPilot support. Never share it in chat or email.</p>
+      <a class="small back-link" href="/">← Back to leadpilot</a>
+    </form>
+  </div>
+</section>
+
+<!-- ───────── app ───────── -->
+<div class="app" id="app-view" hidden>
+  <aside class="rail" aria-label="Console navigation">
+    <a class="brand" href="/"><img src="/assets/img/mark.svg" alt="" width="26" height="26">LeadPilot</a>
+    <nav class="rail-nav">
+      <a href="#/overview" data-route="overview"><svg viewBox="0 0 20 20"><path d="M3 17V9M8 17V4M13 17v-6M18 17v-9"/></svg>Overview</a>
+      <a href="#/pipeline" data-route="pipeline"><svg viewBox="0 0 20 20"><path d="M3 4h4v12H3zM8.5 4h4v8h-4zM14 4h4v5h-4z"/></svg>Pipeline</a>
+      <a href="#/leads" data-route="leads"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/></svg>Leads</a>
+      <a href="#/bookings" data-route="bookings"><svg viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12.5" rx="1"/><path d="M3 8.5h14M7 2.5v4M13 2.5v4"/></svg>Bookings</a>
+      <a href="#/followups" data-route="followups"><svg viewBox="0 0 20 20"><path d="M4 5h12v8H9l-4 3v-3H4z"/></svg>Follow-ups<span class="badge" id="fu-badge" hidden></span></a>
+      <a href="#/settings" data-route="settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>Install &amp; settings</a>
+      <a href="#/pilots" data-route="pilots" id="nav-pilots" hidden><svg viewBox="0 0 20 20"><path d="M3 15l14-10M10 5h7v7"/></svg>Pilot requests</a>
+    </nav>
+    <div class="rail-foot">
+      <div class="who"><strong id="who-name">–</strong><span class="mono" id="who-role">–</span></div>
+      <button class="btn btn-sm btn-ghost" id="logout">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn-sm btn-ghost rail-toggle" id="rail-toggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+      <h1 class="page-title" id="page-title">Overview</h1>
+      <form class="search" id="search" role="search">
+        <label class="sr-only" for="q">Search leads</label>
+        <input class="input" id="q" type="search" placeholder="Search leads by name, phone or need…  /" autocomplete="off">
+      </form>
+      <span class="updated mono" id="updated" aria-live="polite"></span>
+      <button class="btn btn-sm" id="refresh" aria-label="Refresh data">Refresh</button>
+      <button class="btn btn-ghost btn-sm theme-btn" data-theme-toggle><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13a6.5 6.5 0 0 0 0-13z" fill="currentColor"/></svg></button>
+    </header>
+    <main class="view" id="view" tabindex="-1"></main>
+  </div>
+</div>
+
+<script type="module" src="/assets/js/console.js"></script>
+</body>
+</html>
