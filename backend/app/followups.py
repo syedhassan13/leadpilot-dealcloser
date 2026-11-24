@@ -9,7 +9,7 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import insert, select, update
 
 from app import config
-from app.db import followups, get_lead, leads, now, one, rows, run, upsert_lead
+from app.db import chat_log, followups, get_lead, leads, now, one, rows, run, upsert_lead
 from app.tools import pkr
 
 STEP_AFTER_HOURS = {1: 24, 2: 72, 3: 168}          # CUSTOM: follow-up cadence (day 1, 3, 7)
@@ -29,13 +29,16 @@ def _aware(dt):
 def due_leads(ignore_wait: bool = False, business: str = "*") -> list[dict]:
     """Leads that are not booked/lost, went quiet long enough, and have no draft waiting."""
     pending = {r["user_id"] for r in rows(select(followups.c.user_id).where(followups.c.status == "draft"))}
+    # Only leads who had at least one real (not guard-blocked) exchange deserve a follow-up.
+    engaged = {r["user_id"] for r in rows(select(chat_log.c.user_id).where(chat_log.c.blocked == 0).distinct())}
     due = []
     q = select(leads).where(leads.c.status.in_(["new", "qualified"]))
     if business != "*":
         q = q.where(leads.c.business_id == business)
     for lead in rows(q):
         step = (lead["followup_count"] or 0) + 1
-        if step > 3 or lead["user_id"] in pending or not lead["last_thread_id"] or not lead["last_customer_at"]:
+        if (step > 3 or lead["user_id"] in pending or lead["user_id"] not in engaged
+                or not lead["last_thread_id"] or not lead["last_customer_at"]):
             continue
         quiet = now() - _aware(lead["last_customer_at"])
         if ignore_wait or quiet >= timedelta(hours=STEP_AFTER_HOURS[step]):
