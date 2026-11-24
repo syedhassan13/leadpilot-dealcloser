@@ -18,6 +18,7 @@ from app.rag import search_knowledge
 PKT = timezone(timedelta(hours=5))                     # Pakistan time
 SLOTS = ["10:00", "12:00", "14:00", "16:00"]           # CUSTOM: visiting hours (see knowledge base)
 BUSINESS_FOR = {"property": "skyline", "car": "autohub"}
+CATEGORY_OF = {v: k for k, v in BUSINESS_FOR.items()}   # dealer id -> what it sells
 
 
 @dataclass
@@ -25,6 +26,37 @@ class LeadContext:
     """Set by the API for every request. The model can't change it."""
     user_id: str
     thread_id: str = "default"
+    dealer: str | None = None        # set when the chat runs on one dealer's website: only its stock is shown
+
+
+def dealer_of(runtime) -> str | None:
+    ctx = getattr(runtime, "context", None)
+    return getattr(ctx, "dealer", None)
+
+
+def visible_listing(listing_id: str, dealer: str | None) -> dict | None:
+    """A listing by id, limited to the current dealer's stock when the chat is dealer-scoped."""
+    q = select(listings).where(listings.c.id == listing_id.strip().upper())
+    if dealer:
+        q = q.where(listings.c.business_id == dealer)
+    return one(q)
+
+
+def free_slots(listing_id: str, day: str) -> tuple[date | None, list[str], str | None]:
+    """(date, free slots, error). The single source of truth for availability."""
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d").date()
+    except ValueError:
+        return None, [], "Date must be YYYY-MM-DD."
+    if d < today_pkt():
+        return d, [], "That date is in the past."
+    if d > today_pkt() + timedelta(days=60):
+        return d, [], "We take bookings up to 60 days ahead."
+    if d.weekday() == 6:
+        return d, [], f"{d:%A %d %b} is a Sunday and we are closed. Monday to Saturday only."
+    taken = {r["time"] for r in rows(select(bookings.c.time).where(
+        bookings.c.listing_id == listing_id, bookings.c.date == d.isoformat(), bookings.c.status == "confirmed"))}
+    return d, [s for s in SLOTS if s not in taken], None
 
 
 def today_pkt() -> date:
@@ -62,12 +94,17 @@ def customer_confirmed(runtime: ToolRuntime, allow_cancel_word: bool = False) ->
 
 # ── 1. Inventory search (database) ──
 @tool
-def search_inventory(category: Literal["property", "car"], max_price_pkr: int | None = None,
-                     min_price_pkr: int | None = None, location: str | None = None,
+def search_inventory(category: Literal["property", "car"], runtime: ToolRuntime[LeadContext],
+                     max_price_pkr: int | None = None, min_price_pkr: int | None = None, location: str | None = None,
                      keyword: str | None = None, min_bedrooms: int | None = None) -> str:
     """Search available properties or cars. Prices are in PKR (1 crore = 10,000,000; 1 lakh = 100,000).
     keyword matches the title/details, e.g. "apartment", "Civic", "plot". Returns up to 5 matches with IDs."""
+    dealer = dealer_of(runtime)
+    if dealer:
+        category = CATEGORY_OF.get(dealer, category)
     q = select(listings).where(listings.c.category == category, listings.c.status == "available")
+    if dealer:
+        q = q.where(listings.c.business_id == dealer)
     if max_price_pkr:
         q = q.where(listings.c.price_pkr <= int(max_price_pkr * 1.1))     # show slightly-over options too
     if min_price_pkr:
@@ -88,9 +125,9 @@ def search_inventory(category: Literal["property", "car"], max_price_pkr: int | 
 
 # ── 2. Listing details ──
 @tool
-def get_listing(listing_id: str) -> str:
+def get_listing(listing_id: str, runtime: ToolRuntime[LeadContext]) -> str:
     """Full details of one listing by its ID (e.g. P101 or C203)."""
-    r = one(select(listings).where(listings.c.id == listing_id.strip().upper()))
+    r = visible_listing(listing_id, dealer_of(runtime))
     if not r:
         return f"No listing with ID {listing_id}."
     return f"{fmt_listing(r)}\nDetails: {r['details']}\nStatus: {r['status']}"
@@ -98,23 +135,15 @@ def get_listing(listing_id: str) -> str:
 
 # ── 3. Availability (database) ──
 @tool
-def check_availability(listing_id: str, date: str) -> str:
+def check_availability(listing_id: str, date: str, runtime: ToolRuntime[LeadContext]) -> str:
     """Free visit / test-drive slots for a listing on a date (YYYY-MM-DD). Open Mon-Sat."""
-    lid = listing_id.strip().upper()
-    if not one(select(listings.c.id).where(listings.c.id == lid)):
-        return f"No listing with ID {lid}."
-    try:
-        d = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        return "Date must be YYYY-MM-DD."
-    if d < today_pkt():
-        return "That date is in the past."
-    if d.weekday() == 6:
-        return f"{d:%A %d %b} is a Sunday and we are closed. Monday to Saturday only."
-    taken = {r["time"] for r in rows(select(bookings.c.time).where(
-        bookings.c.listing_id == lid, bookings.c.date == d.isoformat(), bookings.c.status == "confirmed"))}
-    free = [s for s in SLOTS if s not in taken]
-    return f"{d:%A %d %b %Y} free slots for {lid}: {', '.join(free) if free else 'none, try another day'}"
+    listing = visible_listing(listing_id, dealer_of(runtime))
+    if not listing:
+        return f"No listing with ID {listing_id.strip().upper()}."
+    d, free, error = free_slots(listing["id"], date)
+    if error:
+        return error
+    return f"{d:%A %d %b %Y} free slots for {listing['id']}: {', '.join(free) if free else 'none, try another day'}"
 
 
 # ── 4. Book (risky: needs the customer's explicit yes) ──
@@ -125,16 +154,20 @@ def book_visit(listing_id: str, date: str, time: str, runtime: ToolRuntime[LeadC
     if not customer_confirmed(runtime):
         return ("NOT BOOKED: the customer has not confirmed yet. Ask them: 'Shall I confirm <listing> on <day> "
                 "at <time>?' and wait for their yes.")
-    lid, user = listing_id.strip().upper(), runtime.context.user_id
-    listing = one(select(listings).where(listings.c.id == lid))
+    user = runtime.context.user_id
+    listing = visible_listing(listing_id, dealer_of(runtime))
     if not listing:
-        return f"NOT BOOKED: no listing with ID {lid}."
+        return f"NOT BOOKED: no listing with ID {listing_id.strip().upper()}."
+    lid = listing["id"]
     time = time.strip()[:5].zfill(5)
     if time not in SLOTS:
         return f"NOT BOOKED: {time} is not a slot. Slots are {', '.join(SLOTS)}."
-    slots_msg = check_availability.invoke({"listing_id": lid, "date": date})
-    if time not in slots_msg.split("for", 1)[-1]:
-        return f"NOT BOOKED: slot not free. {slots_msg}"
+    d, free, error = free_slots(lid, date)
+    if error:
+        return f"NOT BOOKED: {error}"
+    if time not in free:
+        return f"NOT BOOKED: {time} is taken on {d:%A %d %b}. Free: {', '.join(free) or 'none that day'}."
+    date = d.isoformat()
     kind = "site visit" if listing["category"] == "property" else "test drive"
     res = run(insert(bookings).values(user_id=user, listing_id=lid, business_id=listing["business_id"], kind=kind,
                                       date=date, time=time, status="confirmed", created_at=now()))
