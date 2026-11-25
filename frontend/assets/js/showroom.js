@@ -27,6 +27,8 @@ const GLYPH = {
 const glyph = (l) => l.category === "car" ? GLYPH.car : GLYPH[KIND.property.typeOf(l)];
 
 const state = { dealer: "", listings: [], type: "", current: null, slot: null };
+// Two modes: the public showroom demo (several showcase dealers), and an agency's own hosted page /a/<agency>.
+const AGENCY = document.body.dataset.mode === "agency";
 const chat = $("#chat");
 const ready = customElements.whenDefined("leadpilot-chat");
 
@@ -38,17 +40,48 @@ function pickDealer(id, push = true) {
   $("#dealer-title").textContent = d.name;
   $("#dealer-eyebrow").textContent = [k.label, d.city].filter(Boolean).join(" · ");
   $("#dealer-tagline").textContent = d.tagline || "";
-  document.title = `${d.name} · Showroom demo · LeadPilot`;
+  document.title = AGENCY ? `${d.name}${d.city ? " · " + d.city : ""}` : `${d.name} · Showroom demo · LeadPilot`;
   $("#f-max").innerHTML = k.budgets.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   $("#c-msg").placeholder = k.placeholder;
   state.type = "";
   chat.setAttribute("key", d.widget_key);
-  if (push) history.replaceState(null, "", `?dealer=${encodeURIComponent(state.dealer)}`);
+  if (push && !AGENCY) history.replaceState(null, "", `?dealer=${encodeURIComponent(state.dealer)}`);
   load();
 }
 $(".dealer-switch").addEventListener("click", (e) => { const b = e.target.closest("[role=tab]"); if (b) pickDealer(b.dataset.dealer); });
 
+// The agency's brand colour drives buttons and accents. Dark colours get white button text (contrast).
+function applyBrand(color) {
+  if (!/^#[0-9a-f]{6}$/i.test(color || "")) return;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const root = document.documentElement;
+  root.style.setProperty("--signal", color);
+  if (lum < 0.4) { root.style.setProperty("--signal-text", color); root.classList.add("brand-dark"); }
+}
+
+async function startAgency() {
+  const id = decodeURIComponent((location.pathname.match(/^\/a\/([a-z0-9-]{3,40})\/?$/) || [])[1] || "");
+  try {
+    if (!id) throw new Error("This page address isn't complete.");
+    const d = await request(`/agency/${encodeURIComponent(id)}`, { timeout: 60000 });
+    DEALERS = { [d.id]: d };
+    applyBrand(d.brand_color);
+    $("#agency-name").textContent = d.name;
+    $("#agency-foot").textContent = `© ${new Date().getFullYear()} ${d.name}${d.city ? " · " + d.city : ""}`;
+    if (d.phone) { const call = $("#agency-call"); call.href = `tel:${d.phone.replace(/[^0-9+]/g, "")}`; call.textContent = `Call ${d.phone}`; call.hidden = false; }
+    pickDealer(d.id, false);
+  } catch (e) {
+    $("#dealer-title").textContent = e.status === 404 ? "This page isn't available." : "Couldn't load this page.";
+    $("#grid").innerHTML = `<div class="error-state" role="alert">${esc(e.status === 404 ? "The agency may have moved or paused its page." : e.message)}
+      ${e.status === 404 ? "" : '<button class="btn btn-sm" id="retry">Try again</button>'}</div>`;
+    $("#retry")?.addEventListener("click", startAgency);
+  }
+}
+
 async function start() {
+  if (AGENCY) return startAgency();
   try {
     const list = (await request("/dealers", { timeout: 60000 })).filter((d) => KIND[d.category] && d.widget_key);
     if (!list.length) throw new Error("No showcase dealers yet.");
@@ -201,7 +234,7 @@ form.addEventListener("submit", async (e) => {
     const r = await busy(btn, "Connecting you…", () => request("/leads", { method: "POST", timeout: 90000,
       headers: { "X-Widget-Key": DEALERS[state.dealer].widget_key }, body: {
       name: data.name, phone: data.phone, interest: DEALERS[state.dealer].category, message: data.message || "",
-      website: data.website || "", elapsed_ms: elapsed() } }));
+      website: data.website || "", elapsed_ms: elapsed(), ...(chat.source && chat.source() ? { src: chat.source() } : {}) } }));
     await ready;
     chat.adoptLead({ ...r, name: data.name });
     form.reset();

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Listings · LeadPilot</title>
+  <meta name="description" content="Browse listings, check real visit times and get an instant reply from the agency's assistant.">
+  <meta name="theme-color" content="#15140f">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/assets/img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/showroom.css">
+  <script src="/assets/js/nojs.js"></script>
+</head>
+<body data-mode="agency">
+<a class="sr-only" href="#main">Skip to listings</a>
+<header class="site-header">
+  <div class="wrap">
+    <span class="brand agency-brand"><span class="agency-mark" aria-hidden="true"></span><span id="agency-name">Loading…</span></span>
+    <div class="dealer-switch" role="tablist" aria-label="Choose a dealer" hidden></div>
+    <div class="header-end"><a class="btn btn-ghost btn-sm" id="agency-call" hidden>Call us</a><button class="btn btn-ghost btn-sm theme-btn" data-theme-toggle><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13a6.5 6.5 0 0 0 0-13z" fill="currentColor"/></svg></button></div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="store-hero">
+    <div class="wrap store-hero-grid">
+      <div>
+        <p class="eyebrow" id="dealer-eyebrow">&nbsp;</p>
+        <h1 class="h1" id="dealer-title"><span class="skeleton">Loading listings</span></h1>
+        <p class="lede" id="dealer-tagline"></p>
+      </div>
+      <dl class="store-stats" id="store-stats" aria-live="polite">
+        <div><dt>In stock</dt><dd class="mono skeleton">00</dd></div>
+        <div><dt>From</dt><dd class="mono skeleton">00 lakh</dd></div>
+        <div><dt>Replies</dt><dd class="mono">24/7</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="store">
+    <div class="wrap store-grid">
+      <div>
+        <form class="toolbar" id="filters" role="search" aria-label="Filter listings">
+          <div class="field grow"><label for="f-q">Search</label><input class="input" id="f-q" type="search" placeholder="Area, model, feature…" autocomplete="off"></div>
+          <div class="field"><label for="f-max">Budget up to</label><select class="select" id="f-max"></select></div>
+          <div class="field"><label for="f-sort">Sort</label>
+            <select class="select" id="f-sort"><option value="asc">Price: low to high</option><option value="desc">Price: high to low</option></select></div>
+        </form>
+        <div class="type-chips" id="type-chips" role="group" aria-label="Type"></div>
+        <p class="result-count mono" id="result-count" aria-live="polite"></p>
+        <div class="listing-grid" id="grid" aria-busy="true"></div>
+      </div>
+
+      <aside class="callback" aria-labelledby="cb-title">
+        <div class="callback-inner">
+          <p class="eyebrow">Get a reply in seconds</p>
+          <h2 class="h2" id="cb-title">Tell us what you're looking for.</h2>
+          <form id="callback-form" novalidate>
+            <div class="field"><label for="c-name">Name</label><input class="input" id="c-name" name="name" required maxlength="80" autocomplete="name"></div>
+            <div class="field"><label for="c-phone">Phone / WhatsApp</label><input class="input" id="c-phone" name="phone" required maxlength="30" inputmode="tel" autocomplete="tel" pattern="[0-9+ \(\)\-]{5,30}"></div>
+            <div class="field"><label for="c-msg">What do you need?</label><textarea class="textarea" id="c-msg" name="message" maxlength="1000"></textarea></div>
+            <div class="hp" aria-hidden="true"><label for="c-website">Website</label><input id="c-website" name="website" tabindex="-1" autocomplete="off"></div>
+            <p class="field-error" id="cb-error" role="alert"></p>
+            <button class="btn btn-primary" type="submit">Get my instant reply <span class="arrow">→</span></button>
+            <p class="small muted">The assistant replies right away in the chat. See the <a href="/privacy.html">privacy policy</a>.</p>
+          </form>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<dialog class="detail" id="detail" aria-labelledby="d-title">
+  <form method="dialog" class="detail-close"><button class="btn btn-ghost btn-sm" aria-label="Close">Close ✕</button></form>
+  <div class="detail-body">
+    <div class="detail-art" id="d-art" aria-hidden="true"></div>
+    <div class="detail-info">
+      <span class="mono muted" id="d-id"></span>
+      <h2 class="h2" id="d-title"></h2>
+      <p class="muted" id="d-loc"></p>
+      <p class="detail-price mono" id="d-price"></p>
+      <p id="d-details"></p>
+      <dl class="detail-specs" id="d-specs"></dl>
+    </div>
+  </div>
+  <section class="slots" aria-labelledby="slots-title">
+    <div class="slots-head"><h3 class="h3" id="slots-title">Next open slots</h3><span class="small muted">Live from the booking system</span></div>
+    <div class="slot-days" id="d-slots"></div>
+    <div class="slots-actions">
+      <button class="btn btn-primary" id="d-book" disabled>Pick a slot to book</button>
+      <button class="btn" id="d-ask">Ask a question</button>
+    </div>
+    <p class="small muted">The assistant confirms the details with you before anything is booked.</p>
+  </section>
+</dialog>
+
+<footer class="site-footer">
+  <div class="wrap footer-base"><span id="agency-foot">&nbsp;</span>
+    <span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · Powered by <a href="/">LeadPilot</a></span></div>
+</footer>
+
+<leadpilot-chat id="chat" via="page"></leadpilot-chat>
+<script src="/assets/widget/leadpilot-chat.js" defer></script>
+<script type="module" src="/assets/js/showroom.js"></script>
+</body>
+</html>

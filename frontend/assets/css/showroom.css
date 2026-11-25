@@ -102,3 +102,9 @@
   .slot-days { grid-template-columns: repeat(3, 1fr); }
   .demo-bar a { margin-left: 0; }
 }
+
+/* ───────── an agency's hosted LeadPilot page (/a/<agency>) ───────── */
+.agency-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; }
+.agency-mark { width: 14px; height: 14px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 4px var(--signal-soft); }
+.brand-dark .btn-primary { --fg: #ffffff; }
+.dealer-switch[hidden] { display: none; }
