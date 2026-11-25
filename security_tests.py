@@ -78,6 +78,9 @@ check("2.4 login guessing is rate-limited (429 after 10 failed tries per IP)", 4
 
 # 6.1 chat rate limit per user (uses guard-blocked messages: 0 tokens)
 import concurrent.futures as cf   # parallel, so all requests land in the same 60-second window
+# Start just after a minute boundary so the whole burst is measured in one window (the sliding-window
+# estimate is approximate by design when a burst straddles two windows).
+time.sleep(60 - time.time() % 60 + 0.5)
 flood_user = f"sec-flood-{int(time.time())}"
 with cf.ThreadPoolExecutor(10) as ex:
     replies = list(ex.map(lambda _: requests.post(f"{A}/chat", json={"user_id": flood_user, "thread_id": "t1",
