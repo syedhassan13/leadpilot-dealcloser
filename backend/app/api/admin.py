@@ -18,9 +18,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, insert, or_, select, update
 
-from app import config, identity, team, tenants
-from app.db import (alerts, audit_log, bookings, businesses, chat_log, followups, get_lead, leads, links, listings,
-                    members, now, one, pilot_requests, rows, run, upsert_lead, usage)
+from app import channels, config, identity, team, tenants
+from app.db import (alerts, audit_log, bookings, businesses, chat_log, engine, followups, get_lead, leads, links,
+                    listings, members, now, one, pilot_requests, rows, run, upsert_lead, usage)
 from app.followups import run_followups, send_followup, skip_followup
 from app.graph import thread_key
 from app.runtime import rt
@@ -357,7 +357,64 @@ def lead_detail(user_id: str, p: Principal = Depends(principal)):
             "source": {"channel": lead.get("channel"), "link": link, "utm": lead.get("utm")},
             "merged": [{"user_id": u, "channel": r.get("channel"), "created_at": r.get("created_at")} for u, r in alias_rows.items()],
             "assignee": team.public(assignee) if assignee else None,
-            "team": [team.public(m) for m in team.list_for(lead["business_id"]) if m["active"]] if p.role == "manager" else []}
+            "team": [team.public(m) for m in team.list_for(lead["business_id"]) if m["active"]] if p.role == "manager" else [],
+            "contact": contact_info(lead)}
+
+
+def contact_info(lead: dict) -> dict | None:
+    """Where a salesperson can message this buyer from the console, and whether Meta's 24-hour window is open."""
+    c = channels.contact_lead(lead["user_id"])
+    if not c:
+        return None
+    return {"kind": c["contact_kind"], "in_window": channels.in_window(c), "last_inbound_at": c.get("last_inbound_at"),
+            "opted_out": bool(c.get("opted_out")), "ai_paused": bool(lead.get("ai_paused"))}
+
+
+class ReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+@router.post("/admin/leads/{user_id}/reply")
+def reply_to_lead(user_id: str, body: ReplyIn, p: Principal = Depends(principal)):
+    """A salesperson answers the buyer on WhatsApp / Messenger / Instagram. The AI pauses for this buyer."""
+    lead = own_lead(user_id, p)
+    c = channels.contact_lead(lead["user_id"])
+    if not c:
+        raise HTTPException(409, "This buyer hasn't messaged on WhatsApp, Messenger or Instagram, so there's nowhere to reply.")
+    if c.get("opted_out"):
+        raise HTTPException(409, "This buyer asked not to be messaged (STOP).")
+    if not channels.in_window(c):
+        raise HTTPException(409, "More than 24 hours since the buyer's last message. Meta only allows approved templates "
+                                 "now: approve a follow-up instead, or call them.")
+    ch = one(select(channels.channels).where(channels.channels.c.id == c["contact_channel_id"]))
+    if not ch or ch["status"] != "active":
+        raise HTTPException(409, "That channel is disconnected.")
+    text = body.text.strip()
+    ok = channels.deliver(channels.queue(ch, c["contact_id"], "text", {"text": text}, c["user_id"], "manual", send_now=False))
+    from app.api.webhooks import THREAD, remember
+    remember(c["user_id"], THREAD[c["contact_kind"]], None, text)
+    set_paused(lead["user_id"], True)
+    log_event("staff_reply", p.member_id or "", {"business": lead["business_id"], "channel": c["contact_kind"]})
+    return {"sent": ok, "status": "sent" if ok else "queued for retry"}
+
+
+class PauseIn(BaseModel):
+    paused: bool
+
+
+def set_paused(user_id: str, paused: bool):
+    with engine.begin() as cx:
+        cx.execute(update(leads).where(leads.c.user_id == user_id).values(ai_paused=int(paused)))
+        cx.execute(update(leads).where(leads.c.merged_into == user_id).values(ai_paused=int(paused)))
+
+
+@router.post("/admin/leads/{user_id}/ai")
+def pause_ai(user_id: str, body: PauseIn, p: Principal = Depends(principal)):
+    """Take over (pause the AI for this buyer) or hand back to the AI."""
+    lead = own_lead(user_id, p)
+    set_paused(lead["user_id"], body.paused)
+    log_event("ai_paused" if body.paused else "ai_resumed", p.member_id or "", {"business": lead["business_id"]})
+    return {"ai_paused": body.paused}
 
 
 class LeadStatusIn(BaseModel):
@@ -583,6 +640,10 @@ def safe_target(url: str | None, dealer: dict) -> str | None:
     own websites that the LeadPilot team approved (allowed_origins)."""
     if not url:
         return None
+    if url.strip() == "whatsapp":                        # the agency's own connected WhatsApp number
+        if not channels.whatsapp_of(dealer["id"]):
+            raise HTTPException(422, "Connect your WhatsApp number first (Channels).")
+        return "whatsapp:"
     from urllib.parse import urlsplit
     u = urlsplit(url.strip())
     if u.scheme != "https" or not u.hostname or u.username or u.password:
@@ -650,6 +711,113 @@ def link_qr(link_id: str, p: Principal = Depends(manager)):
                                                    xmldecl=False, svgns=True)
     return Response(buf.getvalue(), media_type="image/svg+xml",
                     headers={"Content-Disposition": f'attachment; filename="leadpilot-{l["id"]}.svg"'})
+
+
+# ───────────────────────── channels: WhatsApp, Messenger, Instagram, lead forms (managers) ─────────────────────────
+
+TEMPLATE = r"^[a-z0-9_]{1,100}$"
+
+
+class ChannelIn(BaseModel):
+    kind: Literal["whatsapp", "messenger", "instagram", "leadgen"]
+    external_id: str = Field(pattern=r"^\d{5,30}$")             # phone_number_id / page id / instagram account id
+    token: str = Field(min_length=20, max_length=1000, pattern=r"^[A-Za-z0-9_\-|.]+$")
+    waba_id: str | None = Field(default=None, pattern=r"^\d{5,30}$")  # WhatsApp Business Account (to subscribe webhooks)
+
+
+class ChannelSettings(BaseModel):
+    first_template: str | None = Field(default=None, pattern=TEMPLATE)
+    followup_template: str | None = Field(default=None, pattern=TEMPLATE)
+    alert_template: str | None = Field(default=None, pattern=TEMPLATE)
+    template_lang: str | None = Field(default=None, pattern=r"^[a-z]{2}(_[A-Z]{2})?$")
+
+
+class ChannelPatch(BaseModel):
+    status: Literal["active", "disabled"] | None = None
+    settings: ChannelSettings | None = None
+    token: str | None = Field(default=None, min_length=20, max_length=1000, pattern=r"^[A-Za-z0-9_\-|.]+$")
+
+
+def own_channel(channel_id: str, p: Principal) -> dict:
+    ch = one(select(channels.channels).where(and_(channels.channels.c.id == channel_id,
+                                                  channels.channels.c.business_id == p.business)))
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+    return ch
+
+
+@router.get("/admin/channels")
+def list_channels(p: Principal = Depends(manager)):
+    return {"enabled": channels.enabled(), "webhook_url": f"{config.PUBLIC_API_URL}/webhooks/meta",
+            "channels": [channels.public(c) for c in channels.for_business(p.business)],
+            "outbox": rows(select(channels.outbox.c.id, channels.outbox.c.purpose, channels.outbox.c.status,
+                                  channels.outbox.c.error, channels.outbox.c.created_at)
+                           .where(channels.outbox.c.business_id == p.business).order_by(channels.outbox.c.id.desc()).limit(15))}
+
+
+@router.post("/admin/channels", status_code=201)
+def connect_channel(body: ChannelIn, p: Principal = Depends(manager)):
+    """Connect a WhatsApp number / Facebook page / Instagram account with the agency's own Meta token.
+    The token is checked with Meta, stored encrypted, and never shown again."""
+    if not channels.enabled():
+        raise HTTPException(503, "Channels aren't switched on for this server yet (META_APP_SECRET and CHANNEL_KEY).")
+    taken = one(select(channels.channels).where(and_(channels.channels.c.kind == body.kind,
+                                                     channels.channels.c.external_id == body.external_id)))
+    if taken and taken["business_id"] != p.business:       # never let one agency claim another's number or page
+        raise HTTPException(409, "That account is already connected to another agency.")
+    try:
+        if body.kind == "whatsapp":
+            info = channels.graph("GET", body.external_id, body.token, params={"fields": "display_phone_number,verified_name"})
+            display = info.get("display_phone_number") or body.external_id
+            if body.waba_id:
+                channels.graph("POST", f"{body.waba_id}/subscribed_apps", body.token)
+        elif body.kind == "instagram":
+            info = channels.graph("GET", body.external_id, body.token, params={"fields": "username"})
+            display = "@" + info.get("username", body.external_id)
+        else:
+            info = channels.graph("GET", body.external_id, body.token, params={"fields": "name"})
+            display = info.get("name") or body.external_id
+            channels.graph("POST", f"{body.external_id}/subscribed_apps", body.token,
+                           params={"subscribed_fields": "messages,leadgen"})
+    except channels.GraphError as e:
+        raise HTTPException(422, f"Meta didn't accept these details ({e}). Check the id and that the token has the right permissions.")
+    values = {"business_id": p.business, "kind": body.kind, "external_id": body.external_id, "display": str(display)[:120],
+              "token_enc": channels.seal(body.token), "status": "active", "last_error": None}
+    if taken:
+        run(update(channels.channels).where(channels.channels.c.id == taken["id"]).values(**values))
+        cid = taken["id"]
+    else:
+        import secrets
+        cid = "c_" + secrets.token_hex(8)
+        run(insert(channels.channels).values(id=cid, settings={"template_lang": "en"}, created_at=now(), **values))
+    log_event("channel_connected", p.member_id or "", {"business": p.business, "kind": body.kind})
+    return channels.public(own_channel(cid, p))
+
+
+@router.post("/admin/channels/{channel_id}")
+def update_channel(channel_id: str, body: ChannelPatch, p: Principal = Depends(manager)):
+    ch = own_channel(channel_id, p)
+    changes = {}
+    if body.status:
+        changes["status"] = body.status
+    if body.settings is not None:
+        changes["settings"] = {**channels.settings_of(ch), **body.settings.model_dump(exclude_unset=True)}
+    if body.token:
+        changes["token_enc"] = channels.seal(body.token)
+    if changes:
+        run(update(channels.channels).where(channels.channels.c.id == channel_id).values(**changes))
+        log_event("channel_updated", p.member_id or "", {"business": p.business, "fields": sorted(changes)})
+    return channels.public(own_channel(channel_id, p))
+
+
+@router.post("/cron/outbox")
+def cron_outbox(request: Request, x_cron_secret: str = Header(default="")):
+    """Retries messages that failed with a temporary error (every 10 minutes from GitHub Actions)."""
+    enforce("cron_ip", client_ip(request), 30, 3600)
+    if not config.CRON_SECRET or not hmac.compare_digest(x_cron_secret, config.CRON_SECRET):
+        log_event("cron_auth_failed")
+        raise HTTPException(401, "Bad cron secret")
+    return channels.flush()
 
 
 # ───────────────────────── LeadPilot team only ─────────────────────────
