@@ -244,6 +244,55 @@ leads, listings and AI cost, plus this month's revenue and margin.
     drain a dealer's allowance.
 - **Suspend** a dealer to sign them out everywhere. Their chat drops to capture-only.
 
+### The agency's team, sources and agency page
+
+**Roles.** Every console key resolves to one role, which the server checks on every request:
+
+| Role | Who | Sees | Can |
+|---|---|---|---|
+| Owner | the LeadPilot team (`*` key) | every agency | create and manage agencies, plans, credits |
+| Manager | the agency key, or a personal manager key | everything in their agency | team, tracked links, agency page, settings, billing, delete buyer data |
+| Salesperson | a personal key | only leads assigned to them (with their bookings and follow-ups) | work their leads, change stage, approve their follow-ups |
+
+- **Team → Add a team member** creates a personal key (`lpm_…`, shown once, stored as SHA-256).
+- **Remove**, **change role** or **New key** sign that person out everywhere at once.
+- A removed salesperson's open leads go back to the manager.
+- A manager can't remove or demote themselves.
+
+**Assignment.** By default the manager assigns leads (the **Salesperson** box on a lead). With **round robin**, each
+new lead goes to the salesperson who received one longest ago. When a lead turns **hot** or **books a visit**, the
+assigned salesperson gets a notification (the bell). Managers see all of them.
+
+**Where leads come from.** Every lead records its first source (first touch):
+
+- `website` (chat on the agency's site), `page` (the LeadPilot agency page), `form`.
+- A **tracked link** (Links & QR) has one channel: `qr`, `facebook`, `instagram`, `whatsapp`, `google`, `print`, `portal`, and so on.
+- A **UTM campaign** from an ad URL (`?utm_source=facebook&utm_campaign=dha-6`).
+
+The overview shows leads and booked visits per channel and per link; the leads list filters by source and salesperson.
+
+**Tracked links and QR codes.** Create one per board, brochure, ad or post.
+
+- The link is `https://<api>/l/<id>`.
+- It counts the click (once per person per hour) and sends the buyer to the agency page, or to one of the agency's
+  approved websites, with `?lp=<id>`.
+- The widget remembers that for 30 days and sends it with the chat.
+- **QR code** downloads a print-ready SVG.
+- Targets are fixed when the link is created and must be on the agency's approved website list, so links can't be used as open redirects.
+
+**Agency page.** `https://<site>/a/<agency>` shows the agency's listings, real visit slots, a call-back form and the
+assistant, in its brand colour. It's for agencies without a good website, and as the landing page for ads and QR
+codes. Managers can turn it off.
+
+**One buyer, one lead.**
+
+- Phone numbers are normalised (`0300 1234567`, `+92 300 1234567` and `92-300-1234567` are the same).
+- When a new lead gives a number an older lead **of the same agency** already has, the new lead is merged into the
+  older one. Its details and stage fold in, and the console shows both conversations on one lead.
+- The assistant's memory recognises the returning buyer.
+- Leads are never matched across agencies.
+- Deleting the buyer's data deletes every merged lead.
+
 **Locking down `/chat` after grading.** By default `/chat` without a key stays open, because the assignment's grader
 calls it with no key. Set `CHAT_REQUIRE_KEY=true` on Render after grading. Every chat then needs a valid
 `X-Widget-Key` and is billed to that dealer.
@@ -292,6 +341,12 @@ Tests: `cd backend && pytest` · `python bench.py` · `python security_tests.py 
 - **Alerts are in-console only.** The 80% and 100% alerts appear in the dealer console. Email, SMS and WhatsApp alerts are not built.
 - **Dealer onboarding.** The owner creates dealers in the console. There is no self-serve signup. The landing page collects **pilot requests** instead.
 - **Follow-up delivery.** Approved follow-ups arrive in the buyer's chat thread. WhatsApp, SMS and email delivery are not built.
+- **Channels.** Buyers reach LeadPilot through the website widget, the agency page, the call-back form and tracked
+  links/QR codes (from ads, posts, boards). WhatsApp conversations, Facebook/Instagram lead forms and DMs are the
+  next phase: they need a Meta business app, business verification and app review.
+- **Team alerts are in-console.** Hot-lead and booked-visit alerts show in the console bell, not by WhatsApp or SMS yet.
+- **Phone matching is exact.** Leads merge only on the same normalised number within one agency; a buyer who uses
+  two different numbers stays two leads.
 - **Free-tier hosting.** Render sleeps after 15 idle minutes. A keep-alive ping runs every 10 minutes, but a cold start can still take about 30–60 s.
 - **The widget on other sites.** It uses the host page's fonts if they load, otherwise system fonts.
 - **Language.** It is tested in English. It understands everyday Roman Urdu confirmations but has not been tested for full Urdu conversations.
