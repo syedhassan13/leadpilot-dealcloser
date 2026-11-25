@@ -63,6 +63,7 @@ async function boot() {
   $("#nav-usage").hidden = !isManager();
   $("#nav-team").hidden = !isManager();
   $("#nav-links").hidden = !isManager();
+  $("#nav-channels").hidden = !isManager();
   meAt = Date.now(); teamCache = null;
   refreshBell();
   $("#login-view").hidden = true; $("#app-view").hidden = false;
@@ -71,11 +72,11 @@ async function boot() {
 }
 
 // ───────── routing ─────────
-const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage, team: teamView, links: linksView,
+const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage, team: teamView, links: linksView, channels: channelsView,
   dealers: dealersView, dealer: dealerDetail, newdealer: newDealer };
 const TITLES = { overview: "Overview", pipeline: "Pipeline", leads: "Leads", lead: "Lead", bookings: "Bookings",
   followups: "Follow-ups", settings: "Install & settings", pilots: "Pilot requests", usage: "Plan & usage",
-  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer", team: "Team", links: "Links & QR codes" };
+  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer", team: "Team", links: "Links & QR codes", channels: "Channels" };
 function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, "").split("?");
   const [name, id] = path.split("/");
@@ -315,6 +316,7 @@ async function leadDetail(view, r) {
           <div class="transcript" id="transcript"></div>` : empty("No messages yet.", "This lead came in but hasn't chatted.")}
       </section>
       <div class="stack gap-20">
+        ${contactPanel(d)}
         <section class="panel"><div class="panel-head"><h2>What LeadPilot remembers</h2><span class="muted">long-term memory</span></div>
           <div class="panel-body">${mem.length ? `<dl class="kv">${mem.map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : `<p class="muted">Nothing saved yet.</p>`}</div></section>
         <section class="panel"><div class="panel-head"><h2>Bookings</h2></div>
@@ -332,7 +334,7 @@ async function leadDetail(view, r) {
     $$(".tabs [role=tab]", view).forEach((b) => b.setAttribute("aria-selected", String(b.dataset.thread === t)));
     const box = $("#transcript");
     box.innerHTML = (d.conversations[t] || []).map((m) => `<div class="tmsg ${m.role === "user" ? "user" : "assistant"} ${m.kind === "followup" ? "followup" : ""}">
-      <span class="who">${m.role === "user" ? "Buyer" : m.kind === "followup" ? "Follow-up (approved)" : m.kind === "guard" ? "Guard" : "LeadPilot"}</span>
+      <span class="who">${m.role === "user" ? "Buyer" : m.kind === "followup" ? "Follow-up (approved)" : m.kind === "guard" ? "Guard" : m.kind === "staff" ? "Salesperson" : m.kind === "capture" ? "LeadPilot (capture-only)" : "LeadPilot"}</span>
       <div class="b">${m.role === "user" ? esc(m.text) : md(m.text)}</div></div>`).join("") || `<p class="muted">Empty thread.</p>`;
     box.scrollTop = box.scrollHeight;
   };
@@ -342,6 +344,7 @@ async function leadDetail(view, r) {
     try { await api(`/admin/leads/${encodeURIComponent(l.user_id)}/status`, { method: "POST", body: { status: e.target.value } }); toast(`Stage set to ${e.target.value}`); }
     catch (ex) { toast(ex.message, { error: true }); e.target.value = l.status; }
   });
+  wireContact(l, r);
   $("#ld-assign")?.addEventListener("change", async (e) => {
     try { await api(`/admin/leads/${encodeURIComponent(l.user_id)}/assign`, { method: "POST", body: { member_id: e.target.value || null } });
       toast(e.target.value ? `Assigned to ${e.target.selectedOptions[0].textContent}` : "Unassigned"); }
@@ -813,7 +816,7 @@ const isManager = () => me && me.role === "manager";
 const isAgent = () => me && me.role === "agent";
 const ROLE_LABEL = { owner: "LeadPilot team", manager: "Manager", agent: "Salesperson" };
 const CHANNEL = { website: "Website chat", page: "Agency page", form: "Website form", qr: "QR code", facebook: "Facebook",
-  instagram: "Instagram", whatsapp: "WhatsApp", google: "Google", tiktok: "TikTok", youtube: "YouTube", email: "Email",
+  instagram: "Instagram", whatsapp: "WhatsApp", messenger: "Messenger", google: "Google", tiktok: "TikTok", youtube: "YouTube", email: "Email",
   sms: "SMS", print: "Print", portal: "Property portal", other: "Other", unknown: "Not tracked" };
 const channelName = (c) => CHANNEL[c] || CHANNEL.other;
 const srcTag = (l) => `<span class="src-tag">${esc(channelName(l.channel || "unknown"))}</span>`;
@@ -934,7 +937,7 @@ async function linksView(view, r) {
   if (r.stale()) return;
   const active = x.links.filter((l) => l.active), archived = x.links.filter((l) => !l.active);
   const table = (list) => `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Link</th><th>Clicks</th><th>Leads</th><th>Visits</th><th></th></tr></thead><tbody>
-    ${list.map((l) => `<tr><td><strong>${esc(l.name)}</strong><span class="sub">${esc(channelName(l.channel))} → ${esc(l.target_url ? new URL(l.target_url).host : "LeadPilot page")}</span></td>
+    ${list.map((l) => `<tr><td><strong>${esc(l.name)}</strong><span class="sub">${esc(channelName(l.channel))} → ${esc(l.target_url === "whatsapp:" ? "WhatsApp chat" : l.target_url ? new URL(l.target_url).host : "LeadPilot page")}</span></td>
       <td><code class="small">${esc(l.url)}</code></td><td class="num">${l.clicks}</td><td class="num">${l.leads}</td><td class="num">${l.booked}</td>
       <td class="acts-row"><button class="btn btn-sm" data-copy="${esc(l.url)}">Copy</button>${l.active ? `<button class="btn btn-sm" data-qr="${esc(l.id)}" data-name="${esc(l.name)}">QR code</button>
         <button class="btn btn-sm btn-ghost" data-archive="${esc(l.id)}">Archive</button>` : `<button class="btn btn-sm" data-restore="${esc(l.id)}">Restore</button>`}</td></tr>`).join("")}</tbody></table></div>`;
@@ -950,7 +953,7 @@ async function linksView(view, r) {
           <div class="field"><label for="ln-name">Name</label><input class="input" id="ln-name" name="name" required minlength="2" maxlength="80" placeholder="DHA Phase 9 board"></div>
           <div class="field"><label for="ln-ch">Where it's used</label><select class="select" id="ln-ch" name="channel">${LINK_CHANNELS.map((c) => `<option value="${c}">${esc(channelName(c))}</option>`).join("")}</select></div>
           <div class="field full"><label for="ln-to">Send buyers to</label><select class="select" id="ln-to" name="target_url">
-            <option value="">Your LeadPilot page</option>${x.websites.filter((w) => w.startsWith("https://")).map((w) => `<option value="${esc(w)}/">${esc(w)}</option>`).join("")}</select>
+            <option value="">Your LeadPilot page</option>${x.whatsapp ? `<option value="whatsapp">Your WhatsApp chat (opens WhatsApp with a reference)</option>` : ""}${x.websites.filter((w) => w.startsWith("https://")).map((w) => `<option value="${esc(w)}/">${esc(w)}</option>`).join("")}</select>
             <span class="hint">Your own website appears here once LeadPilot has approved it for your chat.</span></div>
           <div class="full"><button class="btn btn-primary" type="submit">Create link</button></div>
         </form></div></section>
@@ -989,6 +992,131 @@ async function linksView(view, r) {
         out.scrollIntoView({ block: "nearest" });
       }
     } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+}
+
+// ───────── channels: WhatsApp, Messenger, Instagram, lead forms (managers) ─────────
+const KIND_LABEL = { whatsapp: "WhatsApp", messenger: "Facebook Messenger", instagram: "Instagram DMs", leadgen: "Facebook & Instagram lead forms" };
+const KIND_ID_HINT = { whatsapp: "Phone number ID (WhatsApp Manager → API setup)", messenger: "Facebook Page ID",
+  instagram: "Instagram account ID (linked to your Page)", leadgen: "Facebook Page ID (the page that runs the lead ads)" };
+async function channelsView(view, r) {
+  if (!isManager()) { view.innerHTML = empty("Not available.", "Only your agency's manager can connect channels."); return; }
+  const x = await api("/admin/channels");
+  if (r.stale()) return;
+  const has = (k) => x.channels.some((c) => c.kind === k && c.status === "active");
+  const tplField = (c, key, label, hint) => `<div class="field"><label for="${key}-${esc(c.id)}">${label}</label>
+    <input class="input mono" id="${key}-${esc(c.id)}" name="${key}" value="${esc((c.settings || {})[key] || "")}" maxlength="100" pattern="[a-z0-9_]{1,100}" placeholder="template_name"><span class="hint">${hint}</span></div>`;
+  view.innerHTML = `
+    ${x.enabled ? "" : `<div class="plan-banner" role="status"><strong>Channels aren't switched on for this server yet.</strong> The LeadPilot team needs to add the Meta app secret and encryption key. You can still read how it works below.</div>`}
+    <div class="grid-2">
+      <section class="panel"><div class="panel-head"><h2>Connected</h2><span class="muted">${x.channels.filter((c) => c.status === "active").length} active</span></div>
+        ${x.channels.length ? x.channels.map((c) => `<article class="channel ${c.status === "active" ? "" : "off"}">
+          <div class="channel-head"><div><strong>${esc(KIND_LABEL[c.kind])}</strong><span class="sub">${esc(c.display || c.external_id)}</span></div>
+            <div class="acts-row">${statusTag(c.status)}<button class="btn btn-sm btn-ghost" data-toggle="${esc(c.id)}" data-to="${c.status === "active" ? "disabled" : "active"}">${c.status === "active" ? "Disconnect" : "Reconnect"}</button></div></div>
+          <p class="small muted">${c.last_event_at ? `Last message ${when(c.last_event_at)}` : "No messages yet"}${c.last_error ? ` · <span class="err">Last error: ${esc(c.last_error)}</span>` : ""}</p>
+          ${c.kind === "whatsapp" ? `<form class="form-grid tpl-form" data-id="${esc(c.id)}">
+            ${tplField(c, "first_template", "First message to form leads", "Sent within a minute to buyers from Facebook/Instagram lead forms. Two variables: first name, agency name.")}
+            ${tplField(c, "followup_template", "Follow-up template", "Used for approved follow-ups more than 24 hours after the buyer's last message. One variable: the message.")}
+            ${tplField(c, "alert_template", "Salesperson alert template", "Hot-lead and booked-visit alerts to your team's WhatsApp. One variable: the alert.")}
+            <div class="field"><label for="lang-${esc(c.id)}">Template language</label><input class="input mono" id="lang-${esc(c.id)}" name="template_lang" value="${esc((c.settings || {}).template_lang || "en")}" maxlength="5" pattern="[a-z]{2}(_[A-Z]{2})?"></div>
+            <div class="full"><button class="btn btn-sm btn-primary" type="submit">Save templates</button> <span class="small muted">Create and get templates approved in WhatsApp Manager first. Leave empty to switch that message off.</span></div>
+          </form>` : ""}
+          <details class="small"><summary>Replace access token</summary><form class="acts-row mt token-form" data-id="${esc(c.id)}">
+            <input class="input mono" type="password" name="token" minlength="20" maxlength="1000" required autocomplete="off" placeholder="New access token" aria-label="New access token">
+            <button class="btn btn-sm" type="submit">Replace</button></form></details>
+        </article>`).join("") : empty("Nothing connected yet.", "Connect WhatsApp first: most buyers in Pakistan message there.")}
+      </section>
+      <div class="stack gap-20">
+        <section class="panel"><div class="panel-head"><h2>Connect a channel</h2></div><div class="panel-body">
+          <form id="connect" class="form-grid" autocomplete="off">
+            <div class="field full"><label for="cn-kind">Channel</label><select class="select" id="cn-kind" name="kind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}">${esc(l)}${has(k) ? " (connected)" : ""}</option>`).join("")}</select></div>
+            <div class="field full"><label for="cn-id" id="cn-id-label">${esc(KIND_ID_HINT.whatsapp)}</label><input class="input mono" id="cn-id" name="external_id" required pattern="[0-9]{5,30}" inputmode="numeric"></div>
+            <div class="field full" id="cn-waba-f"><label for="cn-waba">WhatsApp Business Account ID</label><input class="input mono" id="cn-waba" name="waba_id" pattern="[0-9]{5,30}" inputmode="numeric"><span class="hint">Lets LeadPilot subscribe to your messages automatically.</span></div>
+            <div class="field full"><label for="cn-token">Access token</label><input class="input mono" id="cn-token" name="token" type="password" required minlength="20" maxlength="1000" autocomplete="off">
+              <span class="hint">A permanent System User token from Meta Business Settings. It's checked with Meta, stored encrypted and never shown again.</span></div>
+            <div class="full"><button class="btn btn-primary" type="submit" ${x.enabled ? "" : "disabled"}>Connect</button></div>
+          </form></div></section>
+        <section class="panel"><div class="panel-head"><h2>Webhook for your Meta app</h2></div><div class="panel-body small">
+          <dl class="kv"><dt>Callback URL</dt><dd><code>${esc(x.webhook_url)}</code> <button class="btn btn-sm" data-copy="${esc(x.webhook_url)}">Copy</button></dd>
+            <dt>Verify token</dt><dd>Ask the LeadPilot team (it's a server secret).</dd>
+            <dt>Fields</dt><dd>WhatsApp: <code>messages</code> · Page: <code>messages</code>, <code>leadgen</code> · Instagram: <code>messages</code></dd></dl></div></section>
+      </div>
+    </div>
+    <section class="panel mt"><div class="panel-head"><h2>Recent outgoing messages</h2><span class="muted">failed ones are retried automatically when Meta has a temporary problem</span></div>
+      ${x.outbox.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Purpose</th><th>Status</th><th>Detail</th><th>When</th></tr></thead><tbody>
+        ${x.outbox.map((o) => `<tr><td class="num">${esc(o.id)}</td><td>${esc(o.purpose)}</td><td>${statusTag(o.status === "sent" ? "sent" : o.status === "failed" ? "cancelled" : "draft")}</td><td class="small">${esc(o.error || "")}</td><td class="num">${when(o.created_at)}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="panel-body muted small">Replies, follow-ups and alerts sent on WhatsApp, Messenger and Instagram appear here.</p>`}</section>`;
+  const kindSel = $("#cn-kind");
+  const syncKind = () => { $("#cn-id-label").textContent = KIND_ID_HINT[kindSel.value]; $("#cn-waba-f").hidden = kindSel.value !== "whatsapp"; };
+  kindSel.addEventListener("change", syncKind, { signal: r.signal }); syncKind();
+  $("#connect").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (!f.checkValidity()) { f.reportValidity(); return; }
+    const body = { kind: val(f, "kind"), external_id: val(f, "external_id"), token: val(f, "token") };
+    if (body.kind === "whatsapp" && val(f, "waba_id")) body.waba_id = val(f, "waba_id");
+    try {
+      const c = await busy($("button[type=submit]", f), "Checking with Meta…", () => api("/admin/channels", { method: "POST", body }));
+      f.reset(); toast(`${KIND_LABEL[c.kind]} connected: ${c.display}`); route(true);
+    } catch (ex) { toast(ex.message, { error: true }); }
+    finally { $("#cn-token") && ($("#cn-token").value = ""); }
+  }, { signal: r.signal });
+  view.addEventListener("submit", async (e) => {
+    const tf = e.target.closest(".tpl-form"), kf = e.target.closest(".token-form");
+    if (!tf && !kf) return;
+    e.preventDefault();
+    const f = tf || kf;
+    if (!f.checkValidity()) { f.reportValidity(); return; }
+    try {
+      if (tf) {
+        const settings = Object.fromEntries(["first_template", "followup_template", "alert_template", "template_lang"]
+          .map((k) => [k, val(f, k) || null]).filter(([k, v]) => k !== "template_lang" || v));
+        await busy($("button", f), "Saving…", () => api(`/admin/channels/${f.dataset.id}`, { method: "POST", body: { settings } }));
+        toast("Templates saved");
+      } else {
+        await busy($("button", f), "Checking…", () => api(`/admin/channels/${f.dataset.id}`, { method: "POST", body: { token: val(f, "token") } }));
+        f.reset(); toast("Token replaced");
+      }
+    } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+  view.addEventListener("click", async (e) => {
+    copyHandler(e);
+    const t = e.target.closest("[data-toggle]"); if (!t) return;
+    if (t.dataset.to === "disabled" && !confirm("Disconnect this channel? Buyers' messages there won't be answered until you reconnect.")) return;
+    try { await api(`/admin/channels/${t.dataset.toggle}`, { method: "POST", body: { status: t.dataset.to } }); route(true); }
+    catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+}
+
+// lead page: the buyer's channel, takeover and reply
+function contactPanel(d) {
+  const c = d.contact;
+  if (!c) return "";
+  const where = KIND_LABEL[c.kind] || c.kind;
+  const state = c.opted_out ? `<p class="small err">The buyer replied STOP: no messages can be sent.</p>`
+    : !c.in_window ? `<p class="small muted">More than 24 hours since the buyer's last message. ${esc(where)} only allows approved templates now: approve a follow-up, or call them.</p>`
+    : `<form id="reply-form" class="stack"><label class="sr-only" for="reply-text">Reply</label>
+        <textarea class="textarea" id="reply-text" maxlength="1000" rows="3" required placeholder="Reply on ${esc(where)}…"></textarea>
+        <div class="acts-row"><button class="btn btn-primary btn-sm" type="submit">Send on ${esc(where)}</button><span class="small muted">Sending pauses the AI for this buyer.</span></div></form>`;
+  return `<section class="panel"><div class="panel-head"><h2>${esc(where)}</h2>${c.ai_paused ? statusTag("draft") : statusTag("active")}</div>
+    <div class="panel-body stack">
+      <div class="acts-row"><span class="small">${c.ai_paused ? "<strong>You've taken over.</strong> The AI won't answer this buyer." : "The AI is answering this buyer."}</span>
+        <button class="btn btn-sm" id="ai-toggle" data-paused="${c.ai_paused ? "1" : "0"}">${c.ai_paused ? "Hand back to AI" : "Take over"}</button></div>
+      ${state}</div></section>`;
+}
+function wireContact(l, r) {
+  $("#ai-toggle")?.addEventListener("click", async (e) => {
+    const pausedNow = e.target.dataset.paused === "1";
+    try { await api(`/admin/leads/${encodeURIComponent(l.user_id)}/ai`, { method: "POST", body: { paused: !pausedNow } });
+      toast(pausedNow ? "The AI is answering again" : "You've taken over this buyer"); route(true); }
+    catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+  $("#reply-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = $("#reply-text").value.trim(); if (!text) return;
+    try { const res = await busy($("button[type=submit]", e.target), "Sending…", () => api(`/admin/leads/${encodeURIComponent(l.user_id)}/reply`, { method: "POST", body: { text } }));
+      toast(res.sent ? "Sent" : "Queued: Meta had a temporary problem, it will retry"); route(true); }
+    catch (ex) { toast(ex.message, { error: true }); }
   }, { signal: r.signal });
 }
 

@@ -286,3 +286,11 @@ tr.inactive td { opacity: .55; }
 .qr-box .muted { color: #5f5b51; }
 @media (max-width: 720px) { .src-sub { margin-left: 0; } }
 td .select { min-width: 140px; }
+
+/* ───────── phase 2: channels, takeover ───────── */
+.channel { padding: 16px 18px; border-bottom: 1px solid var(--rule); display: grid; gap: 10px; }
+.channel.off { opacity: .6; }
+.channel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.channel-head .sub { display: block; font: 500 13px var(--mono); color: var(--muted); }
+.err { color: var(--danger); }
+.channel details summary { cursor: pointer; color: var(--muted); }
