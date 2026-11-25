@@ -119,9 +119,10 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
 .console-shot { margin: 0; border: 1px solid var(--deck-rule); border-radius: 4px; overflow: hidden; background: var(--deck-2);
   box-shadow: 0 50px 100px -40px rgba(0, 0, 0, .8); }
 .console-shot img { width: 100%; height: auto; }
-.console-points { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--deck-rule); }
+.console-points { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); row-gap: 24px; border-top: 1px solid var(--deck-rule); }
 .console-points li { padding: 18px 24px 0 0; display: grid; gap: 4px; }
 .console-points li + li { padding-left: 24px; border-left: 1px solid var(--deck-rule); }
+.console-points li:nth-child(3n+1) { padding-left: 0; border-left: 0; }
 .console-points span { color: var(--deck-muted); font-size: 14.5px; }
 
 /* 05 · trust */
@@ -181,7 +182,8 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
   .engine-grid .section-head { grid-row: auto; }
   .flightplan { grid-template-columns: 1fr 1fr; row-gap: 40px; }
   .console-points { grid-template-columns: 1fr 1fr; row-gap: 20px; }
-  .console-points li:nth-child(3) { border-left: 0; padding-left: 0; }
+  .console-points li:nth-child(n) { border-left: 1px solid var(--deck-rule); padding-left: 24px; }
+  .console-points li:nth-child(odd) { border-left: 0; padding-left: 0; }
 }
 @media (max-width: 680px) {
   .rec-body { grid-template-columns: 1fr; }
@@ -196,7 +198,7 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
   .flightplan li { padding: 0 0 0 36px; }
   .plans, .row2, .specs, .console-points { grid-template-columns: 1fr; }
   .plan + .plan { border-left: 0; border-top: 1px solid var(--ink); }
-  .console-points li + li { border-left: 0; padding-left: 0; }
+  .console-points li:nth-child(n) { border-left: 0; padding-left: 0; }
   .proof { grid-template-columns: 1fr 1fr 1fr; }
   .proof div { padding-right: 12px; margin-right: 12px; }
   .proof dd { font-size: 18px; }
