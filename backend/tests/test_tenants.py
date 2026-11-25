@@ -218,3 +218,11 @@ def test_csv_import_append_and_replace(client, owner):
     # dealers can't import (owner only)
     assert client.post(f"/admin/owner/dealers/{d['id']}/listings", json={"rows": rows_in},
                        headers=login(client, "sky-test-key")).status_code == 403
+
+
+def test_showcase_dealers_are_public_and_unlimited(client):
+    ds = {d["id"]: d for d in client.get("/dealers").json()}
+    assert {"skyline", "autohub", "leadpilot"} <= set(ds)
+    assert all(d["widget_key"].startswith("wk_") for d in ds.values())
+    assert ds["leadpilot"]["category"] == "all"
+    assert tenants.summary(tenants.get("skyline"))["limit"] is None

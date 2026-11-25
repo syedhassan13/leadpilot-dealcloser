@@ -82,14 +82,21 @@ def ensure_dealers():
             fix = {}
             if not r["widget_key"]:
                 fix["widget_key"] = new_widget_key()
-            if not r["plan"]:
-                fix["plan"] = "scale" if r["id"] in SHOWCASE else "pilot"
+            showcase = r["id"] in SHOWCASE
+            # Showcase (public demo) dealers are always public and never run out (the column defaults
+            # would otherwise make them hidden "pilot" dealers on a fresh database).
+            if showcase and r["showcase"] != 1:
+                fix["showcase"] = 1
+            if showcase and r["plan"] in (None, "", "pilot"):
+                fix["plan"] = "internal"
+            elif not r["plan"]:
+                fix["plan"] = "pilot"
             if not r["status"]:
                 fix["status"] = "active"
             if r["extra_credits"] is None:
                 fix["extra_credits"] = 0
-            if r["showcase"] is None:
-                fix["showcase"] = 1 if r["id"] in SHOWCASE else 0
+            if r["showcase"] is None and not showcase:
+                fix["showcase"] = 0
             if not r["created_at"]:
                 fix["created_at"] = now()
             for k, v in SHOWCASE.get(r["id"], {}).items():
