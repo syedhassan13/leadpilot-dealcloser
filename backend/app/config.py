@@ -55,6 +55,11 @@ PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "https://leadpilot-api-hhys.onrende
                            else "http://127.0.0.1:8000").rstrip("/")
 SITE_URL = os.getenv("SITE_URL", "https://leadpilot-hassans-team1.vercel.app" if PRODUCTION
                      else PUBLIC_API_URL).rstrip("/")
+# Meta (WhatsApp Cloud API, Messenger, Instagram, lead forms). Channels stay off until these are set.
+META_APP_SECRET = os.getenv("META_APP_SECRET", "")          # verifies webhook signatures (X-Hub-Signature-256)
+META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "")      # answers Meta's webhook subscription check
+CHANNEL_KEY = os.getenv("CHANNEL_KEY", "")                  # Fernet key that encrypts agencies' Meta tokens
+GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v23.0")
 CHAT_REQUIRE_KEY = os.getenv("CHAT_REQUIRE_KEY", "false").lower() in ("1", "true", "yes")
 
 # Plans: monthly buyer-conversation allowance (None = no limit, for internal accounts) and features.

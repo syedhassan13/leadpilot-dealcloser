@@ -48,6 +48,46 @@ members = Table(                                          # agency team: manager
     Column("created_at", DateTime(timezone=True)),
 )
 
+channels = Table(                                         # an agency's connected WhatsApp number / Facebook page / Instagram
+    "dc_channels", metadata,
+    Column("id", String(24), primary_key=True),           # random
+    Column("business_id", String(40), nullable=False, index=True),
+    Column("kind", String(20), nullable=False),           # whatsapp | messenger | instagram | leadgen
+    Column("external_id", String(64), nullable=False),    # phone_number_id | page id | instagram account id
+    Column("display", String(120)),                       # +92 300 1234567 | page name
+    Column("token_enc", Text),                            # Meta access token, Fernet-encrypted (audit 1.3)
+    Column("settings", JSON),                             # template names, language
+    Column("status", String(20), default="active"),       # active | disabled
+    Column("created_at", DateTime(timezone=True)),
+    Column("last_event_at", DateTime(timezone=True)),
+    Column("last_error", String(300)),
+)
+
+outbox = Table(                                           # every outbound message, with retries (audit 11.2)
+    "dc_outbox", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("business_id", String(40), index=True),
+    Column("channel_id", String(24)),
+    Column("lead_id", String(80), index=True),
+    Column("to", String(64)),
+    Column("kind", String(20)),                           # text | template
+    Column("payload", JSON),
+    Column("purpose", String(20)),                        # reply | followup | first_contact | staff_alert | manual
+    Column("status", String(20), default="queued"),       # queued | sent | failed
+    Column("attempts", Integer, default=0),
+    Column("next_at", DateTime(timezone=True), index=True),
+    Column("external_id", String(120)),
+    Column("error", String(300)),
+    Column("created_at", DateTime(timezone=True)),
+    Column("sent_at", DateTime(timezone=True)),
+)
+
+webhook_events = Table(                                   # each Meta event is processed exactly once (audit 6.6)
+    "dc_webhook_events", metadata,
+    Column("id", String(64), primary_key=True),           # sha256 of the provider's event / message id
+    Column("received_at", DateTime(timezone=True)),
+)
+
 links = Table(                                            # tracked links and QR codes: where leads come from
     "dc_links", metadata,
     Column("id", String(16), primary_key=True),           # random short slug used in /l/<id> and ?lp=<id>
@@ -139,6 +179,12 @@ leads = Table(
     Column("phone_norm", String(20), index=True),         # +923001234567: one buyer across channels
     Column("merged_into", String(80), index=True),        # set when this lead turned out to be a known buyer
     Column("assigned_to", String(24), index=True),        # dc_members.id
+    Column("contact_kind", String(20)),                   # whatsapp | messenger | instagram: where we can message them
+    Column("contact_channel_id", String(24)),             # dc_channels.id
+    Column("contact_id", String(64)),                     # WhatsApp number (923001234567) or page-scoped id
+    Column("last_inbound_at", DateTime(timezone=True)),   # last message from the buyer (24h window)
+    Column("opted_out", Integer, default=0),              # buyer sent STOP: no business-initiated messages
+    Column("ai_paused", Integer, default=0),              # a salesperson took over the conversation
     Column("first_response_ms", Integer),
     Column("followup_count", Integer, default=0),
     Column("last_thread_id", String(120)),
@@ -274,7 +320,9 @@ LATER_COLUMNS = {
                       "showcase": "INTEGER", "created_at": "TIMESTAMP WITH TIME ZONE",
                       "assign_mode": "VARCHAR(20)", "page_enabled": "INTEGER"},
     "dc_leads": {"channel": "VARCHAR(20)", "link_id": "VARCHAR(16)", "utm": "JSON", "phone_norm": "VARCHAR(20)",
-                 "merged_into": "VARCHAR(80)", "assigned_to": "VARCHAR(24)"},
+                 "merged_into": "VARCHAR(80)", "assigned_to": "VARCHAR(24)", "contact_kind": "VARCHAR(20)",
+                 "contact_channel_id": "VARCHAR(24)", "contact_id": "VARCHAR(64)",
+                 "last_inbound_at": "TIMESTAMP WITH TIME ZONE", "opted_out": "INTEGER", "ai_paused": "INTEGER"},
     "dc_alerts": {"member_id": "VARCHAR(24)", "lead_id": "VARCHAR(80)"},
     "dc_admin_sessions": {"member_id": "VARCHAR(24)", "role": "VARCHAR(20)"},
 }
@@ -324,6 +372,7 @@ def delete_customer(user_id: str):
     with engine.begin() as c:
         for table in (followups, bookings, chat_log, audit_log, leads):
             c.execute(delete(table).where(table.c.user_id == user_id))
+        c.execute(delete(outbox).where(outbox.c.lead_id == user_id))
         c.execute(delete(alerts).where(alerts.c.lead_id == user_id))
 
 
