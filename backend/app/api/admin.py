@@ -671,7 +671,7 @@ def list_links(p: Principal = Depends(manager)):
     ls = rows(select(links).where(links.c.business_id == p.business).order_by(links.c.active.desc(), links.c.created_at.desc()))
     d = tenants.get(p.business) or {}
     return {"links": [link_out(l, stats_by.get(l["id"])) for l in ls], "page_url": f"{config.SITE_URL}/a/{p.business}",
-            "page_enabled": tenants.page_on(d),
+            "page_enabled": tenants.page_on(d), "whatsapp": bool(channels.whatsapp_of(p.business)),
             "websites": [o.strip() for o in (d.get("allowed_origins") or "").split(",") if o.strip()]}
 
 

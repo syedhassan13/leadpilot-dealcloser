@@ -17,10 +17,10 @@ from app.db import businesses, engine, leads, links, members, now, one, rows, ru
 
 log = logging.getLogger("leadpilot")
 
-CHANNELS = ("website", "page", "form", "qr", "facebook", "instagram", "whatsapp", "google", "tiktok", "youtube",
+CHANNELS = ("website", "page", "form", "qr", "facebook", "instagram", "whatsapp", "messenger", "google", "tiktok", "youtube",
             "email", "sms", "print", "portal", "other")
 UTM_CHANNEL = {"facebook": "facebook", "fb": "facebook", "meta": "facebook", "instagram": "instagram", "ig": "instagram",
-               "google": "google", "adwords": "google", "whatsapp": "whatsapp", "wa": "whatsapp", "tiktok": "tiktok",
+               "google": "google", "adwords": "google", "whatsapp": "whatsapp", "wa": "whatsapp", "messenger": "messenger", "tiktok": "tiktok",
                "youtube": "youtube", "yt": "youtube", "email": "email", "newsletter": "email", "sms": "sms",
                "zameen": "portal", "graana": "portal", "olx": "portal", "qr": "qr"}
 STATUS_RANK = {"new": 0, "qualified": 1, "lost": 1, "booked": 2}
