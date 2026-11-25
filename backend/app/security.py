@@ -111,32 +111,55 @@ def check_customer(user_id: str, token: str | None):
 SESSION_HOURS = 8
 
 
-def admin_login(key: str) -> dict | None:
-    """Exchange a dealer key for a short-lived, revocable, signed session."""
-    business = None
-    for token, biz in config.admin_tokens().items():        # owner + legacy keys from the environment
-        if key and hmac.compare_digest(token, key):
-            business = biz
-    if business is None:                                     # keys the owner issued from the console
-        from app import tenants
-        business = tenants.dealer_for_console_key(key)
-    if business is None:
+ROLES = ("owner", "manager", "agent")      # owner = LeadPilot team (all agencies); manager/agent = one agency
+
+
+def _resolve_key(key: str) -> tuple[str, str, str | None] | None:
+    """A console key -> (business, role, member_id). Kinds of keys:
+    - ADMIN_TOKENS in the environment ("*" = LeadPilot owner, otherwise an agency manager)
+    - an agency key issued by the owner (manager)
+    - a personal team key issued by the agency's manager (manager or agent)"""
+    if not key:
         return None
+    for token, biz in config.admin_tokens().items():
+        if hmac.compare_digest(token, key):
+            return biz, ("owner" if biz == "*" else "manager"), None
+    from app import team, tenants
+    business = tenants.dealer_for_console_key(key)
+    if business:
+        return business, "manager", None
+    m = team.member_for_key(key)
+    if m:
+        return m["business_id"], m["role"], m["id"]
+    return None
+
+
+def admin_login(key: str) -> dict | None:
+    """Exchange a console key for a short-lived, revocable, signed session."""
+    found = _resolve_key(key)
+    if found is None:
+        return None
+    business, role, member_id = found
     if business != "*":
         from app import tenants
         d = tenants.get(business)
         if d is None or (d.get("status") or "active") != "active":
-            return None                                      # deleted or suspended dealers can't sign in
+            return None                                      # deleted or suspended agencies can't sign in
+    if member_id:
+        from app import team
+        team.touch_login(member_id)
     jti = secrets.token_hex(16)
     exp = int(time.time()) + SESSION_HOURS * 3600
-    run(insert(admin_sessions).values(jti=jti, business=business, created_at=now(),
+    run(insert(admin_sessions).values(jti=jti, business=business, member_id=member_id, role=role, created_at=now(),
                                       expires_at=datetime.fromtimestamp(exp, timezone.utc), revoked=0))
     payload = base64.urlsafe_b64encode(json.dumps({"j": jti, "b": business, "e": exp}).encode()).decode().rstrip("=")
-    return {"session": f"{payload}.{_sign('admin:' + payload)}", "business": business, "expires_at": exp}
+    return {"session": f"{payload}.{_sign('admin:' + payload)}", "business": business, "role": role, "expires_at": exp}
 
 
-def verify_admin(session: str) -> tuple[str, str]:
-    """Return (business, jti) for a valid session, else 401. Checks signature, expiry and revocation."""
+def verify_principal(session: str) -> dict:
+    """Who is calling: {business, role, member_id, jti}. 401 unless the signature is valid, the session hasn't
+    expired or been revoked, and (for personal keys) the team member is still active. The role always comes
+    from the server's session row, never from the token (audit 2.5, 3.2, 3.3)."""
     try:
         payload, sig = session.split(".", 1)
         if not hmac.compare_digest(_sign("admin:" + payload), sig):
@@ -145,11 +168,24 @@ def verify_admin(session: str) -> tuple[str, str]:
         if data["e"] < time.time():
             raise ValueError("expired")
         row = one(select(admin_sessions).where(admin_sessions.c.jti == data["j"]))
-        if not row or row["revoked"]:
+        if not row or row["revoked"] or row["business"] != data["b"]:
             raise ValueError("revoked")
-        return data["b"], data["j"]
+        role = row.get("role") or ("owner" if row["business"] == "*" else "manager")
+        if role not in ROLES:
+            raise ValueError("bad role")
+        if row.get("member_id"):
+            from app import team
+            if not team.is_active(row["member_id"], row["business"]):
+                raise ValueError("member removed")
+        return {"business": row["business"], "role": role, "member_id": row.get("member_id"), "jti": row["jti"]}
     except Exception:
         raise HTTPException(401, "Session expired or invalid. Please log in again.")
+
+
+def verify_admin(session: str) -> tuple[str, str]:
+    """Return (business, jti) for a valid session, else 401."""
+    p = verify_principal(session)
+    return p["business"], p["jti"]
 
 
 def revoke_admin(jti: str):
