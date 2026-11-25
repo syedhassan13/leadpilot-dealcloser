@@ -293,6 +293,70 @@ codes. Managers can turn it off.
 - Leads are never matched across agencies.
 - Deleting the buyer's data deletes every merged lead.
 
+### WhatsApp, Messenger, Instagram and lead forms (Meta)
+
+**What buyers get:**
+- A buyer who messages the agency's **WhatsApp** number (from a click-to-WhatsApp ad, a QR code, the website or a
+  tracked link) gets the same AI as the website, replying from the agency's own number.
+- Buyers who **DM** the agency's Facebook page or Instagram account get the same.
+- A buyer who fills a **Facebook/Instagram lead form** appears in the console at once. If the agency set a
+  first-contact template, they get a WhatsApp message within a minute.
+
+**How LeadPilot treats these leads:**
+- Every lead is matched by phone with the buyer's other contacts, attributed to the ad or campaign, and counted
+  against the plan.
+- At the plan limit the agency drops to capture-only, as on the website.
+
+**What the team can do:**
+- **Take over** a buyer: the AI pauses for that buyer.
+- **Reply from the console** on the buyer's channel.
+- Approved follow-ups are delivered on WhatsApp.
+- Hot leads and booked visits alert the assigned salesperson on WhatsApp.
+
+**Meta's rules are built in.**
+- **24-hour window:** free-form messages only within 24 hours of the buyer's last message. After that only
+  approved **templates**: the follow-up template, or nothing.
+- **STOP** opts a buyer out of every business-initiated message; **START** opts back in.
+
+**Security (audit 6.6, 1.3, 1.4, 5.4):**
+- Every webhook must carry a valid `X-Hub-Signature-256`. Each event is processed once, and Meta gets its 200
+  before the AI runs.
+- Each agency's Meta token is encrypted with `CHANNEL_KEY`. It's never shown, logged or put in a URL, and Meta
+  error messages are scrubbed of tokens.
+- Outbound calls only go to `graph.facebook.com`.
+- A WhatsApp number or page can't be connected to two agencies.
+- A sender is limited to 30 messages an hour.
+- Echoes of our own replies are ignored.
+
+**One-time setup (LeadPilot team):**
+1. At developers.facebook.com create a **Business** app and add **WhatsApp**, **Messenger**, **Instagram** and
+   **Webhooks**.
+2. Set these on Render. They're secrets: never commit them or share them.
+
+   | Variable | Value |
+   |---|---|
+   | `META_APP_SECRET` | App settings → Basic → App secret |
+   | `META_VERIFY_TOKEN` | any long random string |
+   | `CHANNEL_KEY` | a Fernet key: `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`. Keep a backup: if it's lost, agencies must reconnect. |
+   | `GRAPH_API_VERSION` | optional, defaults to `v23.0` |
+3. Webhooks → callback URL `https://<api>/webhooks/meta` with the same verify token. Subscribe:
+   - WhatsApp Business Account: `messages`
+   - Page: `messages`, `leadgen`
+   - Instagram: `messages`
+4. Until Meta's **business verification** and **app review** are done (permissions `whatsapp_business_messaging`,
+   `whatsapp_business_management`, `pages_messaging`, `leads_retrieval`, `instagram_manage_messages`), everything
+   works in test mode: Meta's test number, and up to 5 recipient numbers you add.
+
+**Per agency (manager, Console → Channels):**
+1. In Meta Business Settings create a **System User**, give it the agency's WhatsApp account and Page, and generate
+   a permanent token.
+2. Connect WhatsApp with the **phone number ID**, the **WhatsApp Business Account ID** and that token. Connect the
+   Page (Messenger and lead forms) and Instagram the same way.
+3. In WhatsApp Manager create and get approved three templates, then enter their names:
+   - first contact: two variables, the buyer's first name and the agency name
+   - follow-up: one variable
+   - staff alert: one variable
+
 **Locking down `/chat` after grading.** By default `/chat` without a key stays open, because the assignment's grader
 calls it with no key. Set `CHAT_REQUIRE_KEY=true` on Render after grading. Every chat then needs a valid
 `X-Widget-Key` and is billed to that dealer.
@@ -341,10 +405,12 @@ Tests: `cd backend && pytest` · `python bench.py` · `python security_tests.py 
 - **Alerts are in-console only.** The 80% and 100% alerts appear in the dealer console. Email, SMS and WhatsApp alerts are not built.
 - **Dealer onboarding.** The owner creates dealers in the console. There is no self-serve signup. The landing page collects **pilot requests** instead.
 - **Follow-up delivery.** Approved follow-ups arrive in the buyer's chat thread. WhatsApp, SMS and email delivery are not built.
-- **Channels.** Buyers reach LeadPilot through the website widget, the agency page, the call-back form and tracked
-  links/QR codes (from ads, posts, boards). WhatsApp conversations, Facebook/Instagram lead forms and DMs are the
-  next phase: they need a Meta business app, business verification and app review.
-- **Team alerts are in-console.** Hot-lead and booked-visit alerts show in the console bell, not by WhatsApp or SMS yet.
+- **Meta approval.** WhatsApp, Messenger, Instagram and lead forms are built and tested with signed simulated
+  webhooks. Real buyers need Meta business verification and app review; until then Meta's test mode allows up to
+  5 recipient numbers.
+- **Connecting is manual.** Managers paste a System User token, not Meta's one-click Embedded Signup.
+- **Text only.** Photos, voice notes and documents get a polite "please type your question" reply.
+- **Team alerts on WhatsApp need an approved template**; without one they stay in the console bell.
 - **Phone matching is exact.** Leads merge only on the same normalised number within one agency; a buyer who uses
   two different numbers stays two leads.
 - **Free-tier hosting.** Render sleeps after 15 idle minutes. A keep-alive ping runs every 10 minutes, but a cold start can still take about 30–60 s.
