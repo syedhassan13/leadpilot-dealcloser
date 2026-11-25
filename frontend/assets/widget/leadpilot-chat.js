@@ -1,7 +1,10 @@
 /* LeadPilot chat widget: <leadpilot-chat key="wk_…"></leadpilot-chat>
    Embeddable on any website with one script tag. Shadow DOM keeps its styles isolated from the host page.
    Attributes: key (the dealer's public widget key: name, branding and billing come from LeadPilot),
-   api (optional API base), open (start open), dealer (legacy: a showcase dealer id, open mode only).
+   api (optional API base), open (start open), dealer (legacy: a showcase dealer id, open mode only),
+   via ("page" on the agency's hosted LeadPilot page).
+   Attribution: ?lp=<tracked link> and utm_source/utm_medium/utm_campaign in the page address are remembered
+   (first touch, 30 days, per key) and sent with the chat so the agency sees where each buyer came from.
    Methods: open(), close(), ask(text), prefill(text), adoptLead({user_id, token, thread_id, name, first_message, reply, response_ms}) */
 (() => {
   if (customElements.get("leadpilot-chat")) return;
@@ -18,6 +21,16 @@
   };
   const GENERIC = { name: "LeadPilot", what: "property or car", category: "all", brand_color: null };
   const configs = {};   // widget key -> promise of /widget/config
+  const SRC_DAYS = 30;
+  const SRC_RE = { link: /^[0-9a-f]{10}$/, utm: /^[A-Za-z0-9 _.\-]{1,60}$/ };
+  function readSource() {
+    let q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return null; }
+    const src = {};
+    if (SRC_RE.link.test(q.get("lp") || "")) src.link = q.get("lp");
+    ["utm_source", "utm_medium", "utm_campaign"].forEach((k) => { const v = (q.get(k) || "").trim(); if (SRC_RE.utm.test(v)) src[k] = v; });
+    return Object.keys(src).length ? src : null;
+  }
   const TOOL_LABEL = {
     search_inventory: "Searched live inventory", get_listing: "Opened listing details",
     check_availability: "Checked real availability", book_visit: "Booked the visit",
@@ -87,6 +100,16 @@
     get dealer() { return this.key ? "" : (this.getAttribute("dealer") || "").trim(); }
     get info() { return this.cfg || GENERIC; }
     get threadKey() { return `leadpilot:thread:${this.key || this.dealer || "all"}`; }
+    get srcKey() { return `leadpilot:src:${this.key || "all"}`; }
+    /** Where this buyer came from: the first tracked link / campaign seen in the last 30 days. */
+    source() {
+      const now = Date.now(), saved = store.get(this.srcKey);
+      let src = saved && saved.at && now - saved.at < SRC_DAYS * 864e5 ? saved.src : null;
+      if (!src) { src = readSource(); if (src) store.set(this.srcKey, { src, at: now }); }
+      const out = { ...(src || {}) };
+      if (this.getAttribute("via") === "page") out.via = "page";
+      return Object.keys(out).length ? out : null;
+    }
     get me() { return store.get("leadpilot:customer"); }
     set me(v) { v ? store.set("leadpilot:customer", v) : store.del("leadpilot:customer"); }
     get threadId() {
@@ -124,6 +147,7 @@
     /** Load the dealer behind the key (name, what it sells, brand colour), then redraw. */
     async applyDealer() {
       const key = this.key;
+      if (key) this.source();               // remember the landing page's link / campaign before the buyer browses on
       this.cfg = null;
       this.paint();
       if (!key) return;
@@ -279,6 +303,8 @@
         const me = await this.ensureCustomer();
         const body = { user_id: me.user_id, thread_id: this.threadId, message: text };
         if (this.dealer) body.dealer = this.dealer;
+        const src = this.key ? this.source() : null;
+        if (src) body.src = src;
         const r = await this.http("/chat", { method: "POST", body });
         this.typing(false);
         this.add("assistant", r.reply, { tools: r.tool_calls, meta: `Replied in ${((performance.now() - t0) / 1000).toFixed(1)} s` });
