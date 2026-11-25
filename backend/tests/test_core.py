@@ -118,3 +118,17 @@ def test_api_contract_and_isolation():
         root = c.post("/admin/login", json={"key": "root-test-key"}).json()["session"]
         stats = c.get("/admin/stats", headers={"Authorization": f"Bearer {root}"}).json()
         assert len(stats["series"]) == 14 and set(stats["funnel"]) == {"new", "qualified", "booked", "lost"}
+
+
+def test_rate_limit_counts_across_the_window_boundary(monkeypatch):
+    """A burst straddling a window boundary must not get double the allowance."""
+    import app.security as sec
+    t = [1_000_000 * 60 + 59.0]                       # 1 s before a 60-second boundary
+    import types
+    monkeypatch.setattr(sec, "time", types.SimpleNamespace(time=lambda: t[0]))   # this module's clock only
+    ok = [sec.hit("boundary", "u1", 5, 60) for _ in range(5)]
+    t[0] += 2                                          # next window, 1 s in
+    after = [sec.hit("boundary", "u1", 5, 60) for _ in range(3)]
+    assert all(ok) and not any(after)
+    t[0] += 60                                         # a full window later the allowance is back
+    assert sec.hit("boundary", "u1", 5, 60)

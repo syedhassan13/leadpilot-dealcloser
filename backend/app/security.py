@@ -40,12 +40,25 @@ def client_ip(request: Request) -> str:
 
 
 # ───────────────────────── rate limits in the database (audit 6.1, 8.1) ─────────────────────────
+def _rl_key(scope: str, ident: str, window_s: int, bucket: int) -> str:
+    return hashlib.sha256(f"{scope}|{ident}|{window_s}|{bucket}".encode()).hexdigest()[:40]
+
+
+def _sliding(c, scope: str, ident: str, window_s: int, current: int) -> float:
+    """Sliding-window estimate: this window's count plus the previous window's count weighted by how much of
+    it still overlaps the last `window_s` seconds. Stops a burst that straddles a window boundary from getting
+    double the allowance (a plain fixed window resets to zero at the boundary)."""
+    now_s = time.time()
+    bucket = int(now_s // window_s)
+    prev = c.execute(select(rate_limits.c.count).where(rate_limits.c.key == _rl_key(scope, ident, window_s, bucket - 1))).scalar() or 0
+    return current + prev * (1 - (now_s % window_s) / window_s)
+
+
 def hit(scope: str, ident: str, limit: int, window_s: int) -> bool:
-    """Count one hit in a fixed window, shared by all server instances and surviving restarts.
-    Returns True if still within the limit."""
+    """Count one hit, shared by all server instances and surviving restarts. Returns True if still within the limit."""
     bucket = int(time.time() // window_s)
-    key = hashlib.sha256(f"{scope}|{ident}|{window_s}|{bucket}".encode()).hexdigest()[:40]
-    expires = datetime.now(timezone.utc) + timedelta(seconds=window_s)
+    key = _rl_key(scope, ident, window_s, bucket)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=2 * window_s)   # kept one extra window for _sliding
     if is_postgres():
         from sqlalchemy.dialects.postgresql import insert as dialect_insert
     else:
@@ -54,17 +67,18 @@ def hit(scope: str, ident: str, limit: int, window_s: int) -> bool:
     stmt = stmt.on_conflict_do_update(index_elements=["key"], set_={"count": rate_limits.c.count + 1}).returning(rate_limits.c.count)
     with engine.begin() as c:
         count = c.execute(stmt).scalar()
+        estimate = _sliding(c, scope, ident, window_s, count)
         if secrets.randbelow(200) == 0:   # occasional cleanup of old windows
             c.execute(delete(rate_limits).where(rate_limits.c.expires_at < datetime.now(timezone.utc)))
-    return count <= limit
+    return estimate <= limit
 
 
-def peek(scope: str, ident: str, window_s: int) -> int:
-    """Current count in this window, without adding a hit."""
+def peek(scope: str, ident: str, window_s: int) -> float:
+    """Current (sliding) count, without adding a hit."""
     bucket = int(time.time() // window_s)
-    key = hashlib.sha256(f"{scope}|{ident}|{window_s}|{bucket}".encode()).hexdigest()[:40]
-    row = one(select(rate_limits.c.count).where(rate_limits.c.key == key))
-    return row["count"] if row else 0
+    with engine.connect() as c:
+        current = c.execute(select(rate_limits.c.count).where(rate_limits.c.key == _rl_key(scope, ident, window_s, bucket))).scalar() or 0
+        return _sliding(c, scope, ident, window_s, current)
 
 
 def enforce(scope: str, ident: str, limit: int, window_s: int):
