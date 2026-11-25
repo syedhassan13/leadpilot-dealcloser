@@ -345,3 +345,22 @@ def test_deleting_a_buyer_removes_their_messages(client, meta):
     assert rows(select(outbox).where(outbox.c.lead_id == lead["user_id"]))
     assert client.delete(f"/admin/leads/{lead['user_id']}", headers=a["mgr"]).status_code == 200
     assert not rows(select(outbox).where(outbox.c.lead_id == lead["user_id"])) and get_lead(lead["user_id"]) is None
+
+
+def test_meta_errors_never_leak_the_token(monkeypatch):
+    """Meta echoes the access token in some errors ("Malformed access token EAA..."): it must be scrubbed (audit 1.4)."""
+    import requests as rq
+
+    class Resp:
+        status_code, content = 400, b"x"
+
+        def json(self):
+            return {"error": {"code": 190, "message": "Malformed access token EAAGsecretSECRET123456 for this call"}}
+    monkeypatch.setattr(rq, "request", lambda *a, **k: Resp())
+    import importlib
+    real = importlib.reload(channels)                     # the real graph(), not the recorder
+    with pytest.raises(real.GraphError) as e:
+        real.graph("POST", "123/messages", "EAAGsecretSECRET123456", {})
+    assert "EAAG" not in str(e.value) and "[token]" in str(e.value)
+    assert "EAAGother0000000000" not in real.redact("bad token EAAGother0000000000")
+    importlib.reload(channels)

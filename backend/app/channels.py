@@ -65,6 +65,16 @@ class GraphError(Exception):
         self.status, self.retry = status, retry
 
 
+TOKENISH = re.compile(r"\b(EAA[A-Za-z0-9]{8,}|[A-Za-z0-9_\-|.]{40,})")
+
+
+def redact(message: str, token: str | None = None) -> str:
+    """Meta sometimes echoes the access token in its error text ("Malformed access token EAA..."). Audit 1.4:
+    never store, log or show it."""
+    m = message.replace(token, "[token]") if token else message
+    return TOKENISH.sub("[token]", m)
+
+
 def graph(method: str, path: str, token: str, body: dict | None = None, params: dict | None = None) -> dict:
     """Call graph.facebook.com/<version>/<path>. path is built by us from ids we stored, never from user URLs."""
     if not re.fullmatch(r"[A-Za-z0-9_]+(/[A-Za-z0-9_]+)?", path):
@@ -78,7 +88,7 @@ def graph(method: str, path: str, token: str, body: dict | None = None, params: 
     if r.status_code >= 400:
         try:
             err = r.json().get("error", {})
-            msg = f"{err.get('code', r.status_code)}: {str(err.get('message', ''))[:200]}"
+            msg = f"{err.get('code', r.status_code)}: {redact(str(err.get('message', '')), token)[:200]}"
         except ValueError:
             msg = str(r.status_code)
         raise GraphError(r.status_code, msg, r.status_code in (429,) or r.status_code >= 500)
