@@ -1,11 +1,12 @@
 """Application services shared by the routers: run a conversation turn, read and erase customer data."""
 import logging
+import re
 import time
 
 from langchain.messages import AIMessage, HumanMessage
 from sqlalchemy import insert, select
 
-from app.db import bookings, chat_log, delete_customer, listings, now, rows, run
+from app.db import bookings, chat_log, delete_customer, get_lead, listings, now, rows, run, upsert_lead
 from app.graph import thread_key
 from app.runtime import rt
 from app.tools import LeadContext
@@ -45,6 +46,39 @@ def run_turn(user_id: str, thread_id: str, message: str, dealer: str | None = No
     except Exception:
         log.exception("chat log write failed")
     return {"reply": reply, "tool_calls": tool_calls, "tokens": tokens, "latency_ms": latency}
+
+
+PHONE_RE = re.compile(r"(?:\+?92|0)3\d{2}[\s-]?\d{7}|\b0\d{2,3}[\s-]?\d{6,8}\b")
+
+
+def capture_turn(dealer: dict, user_id: str, thread_id: str, message: str, reason: str) -> str:
+    """Capture-only reply (dealer at its plan limit or suspended): no AI call, no AI cost, but the buyer is
+    answered politely and the lead (with any phone number they typed) is saved for the dealer's team."""
+    phone = PHONE_RE.search(message)
+    lead = get_lead(user_id) or {}
+    upsert_lead(user_id, business_id=None if lead.get("business_id") else dealer["id"],
+                category=None if lead.get("category") else (dealer["category"] if dealer["category"] != "all" else None),
+                phone=None if lead.get("phone") or not phone else phone.group(0), last_thread_id=thread_id,
+                last_customer_at=now(), source=lead.get("source") or "chat (capture-only)")
+    asked = bool(lead.get("phone") or phone)
+    reply = (f"Thanks for your message! A sales officer from {dealer['name']} will get back to you shortly. "
+             + ("" if asked else "Please share your name and phone number so they can reach you."))
+    cfg = config_for(user_id, thread_id)
+    try:   # keep the transcript complete for the dealer's console
+        rt.graph.update_state(cfg, {"messages": [HumanMessage(message), AIMessage(reply, name="capture")]}, as_node="memory")
+        ns = ("leads", user_id)
+        act = rt.store.get(ns, "activity")
+        threads = act.value.get("threads", []) if act else []
+        if thread_id not in threads:
+            rt.store.put(ns, "activity", {"threads": (threads + [thread_id])[-20:], "last_seen": now().isoformat()})
+    except Exception:
+        log.exception("could not store capture-only turn")
+    try:
+        run(insert(chat_log).values(user_id=user_id, thread_id=thread_id, message=message, reply=reply, tool_calls=[],
+                                    blocked=0, tokens_in=0, tokens_out=0, latency_ms=0, created_at=now()))
+    except Exception:
+        log.exception("chat log write failed")
+    return reply
 
 
 def visible_messages(messages) -> list[dict]:

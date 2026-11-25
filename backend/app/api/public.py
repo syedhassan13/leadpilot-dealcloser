@@ -1,31 +1,39 @@
-"""Public endpoints: the graded agent API, the listings catalogue, new customers, leads and pilot requests."""
+"""Public endpoints: the agent API, widget config, catalogue, new customers, leads and pilot requests.
+
+Who pays for a chat:
+- With an X-Widget-Key header, the chat belongs to that dealer: each new conversation counts against the dealer's
+  monthly plan (then extra credits). At the limit, new conversations get capture-only replies (no AI call).
+- Without a key, the chat is "open" (needed by the assignment's grader) and only the global daily cap applies.
+  Set CHAT_REQUIRE_KEY=true to switch open chats off.
+"""
 from datetime import timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException, Path, Request
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import insert, select
 
-from app import config
+from app import config, guard, tenants
 from app.db import businesses, listings, now, one, pilot_requests, rows, run, upsert_lead
+from app.graph import thread_key
 from app.runtime import rt
 from app.security import (ID_PATTERN, SITE_USER_PREFIX, check_customer, client_ip, enforce, hit, log_event,
                           new_customer)
-from app.services import run_turn
-from app.tools import BUSINESS_FOR, SLOTS, free_slots, today_pkt
+from app.services import capture_turn, run_turn
+from app.tools import SLOTS, free_slots, today_pkt
 
 router = APIRouter()
-Dealer = Literal["skyline", "autohub"]
+DEALER_ID_PATTERN = r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
 
 
-# ───────────────────────── graded agent API (open by assignment) ─────────────────────────
+# ───────────────────────── agent API ─────────────────────────
 
 class ChatIn(BaseModel):
     user_id: str = Field(pattern=ID_PATTERN)
     thread_id: str = Field(pattern=ID_PATTERN)
     message: str = Field(max_length=config.MAX_MESSAGE_CHARS)
-    dealer: Dealer | None = None       # optional: the widget on one dealer's site only shows that dealer's stock
+    dealer: str | None = Field(default=None, pattern=DEALER_ID_PATTERN)   # open mode only: scope to a showcase dealer
 
 
 class ChatOut(BaseModel):
@@ -43,10 +51,19 @@ def health():
     return "ok"
 
 
+def chat_dealer(request: Request, requested: str | None) -> dict | None:
+    """The dealer this chat is billed to. A widget key always wins; the plain `dealer` field is only honoured
+    in open mode and only for public showcase dealers (it can't spend a real customer's allowance)."""
+    dealer = tenants.resolve_widget(request)
+    if dealer is None and requested:
+        d = tenants.get(requested)
+        dealer = d if d and d.get("showcase") else None
+    return dealer
+
+
 @router.post("/chat", response_model=ChatOut)
 def chat(req: ChatIn, request: Request, x_user_token: str | None = Header(default=None)):
-    # Website-issued ids are bound to a signed token; other ids stay open because the grader calls /chat
-    # without login (documented, accepted risk).
+    dealer = chat_dealer(request, req.dealer)
     if req.user_id.startswith(SITE_USER_PREFIX):
         check_customer(req.user_id, x_user_token)
     ip = client_ip(request)
@@ -54,11 +71,32 @@ def chat(req: ChatIn, request: Request, x_user_token: str | None = Header(defaul
             and hit("chat_ip_min", ip, config.CHAT_PER_IP_PER_MIN, 60)
             and hit("chat_user_day", req.user_id, config.CHAT_PER_USER_PER_DAY, 86400)):
         return graded("You're sending messages very quickly. Please wait a minute and try again.")
+    # Messages the guard will refuse never reach the AI, so they never count against a dealer's allowance.
+    if dealer is not None and not guard.check(req.message):
+        allowed, reason = tenants.admit_conversation(dealer, thread_key(req.user_id, req.thread_id), ip)
+        if reason == "too_many_new":
+            return graded("You've started several new chats in a short time. Please continue in your current "
+                          "conversation, or try again in an hour.")
+        if not allowed:
+            log_event("chat_capture_only", req.user_id, {"dealer": dealer["id"], "reason": reason})
+            return graded(capture_turn(dealer, req.user_id, req.thread_id, req.message, reason))
     if not hit("ai_global_day", "all", config.AI_TURNS_PER_DAY, 86400):
         log_event("ai_daily_cap_reached", req.user_id)
         return graded("Our assistant is busy right now. A sales officer will contact you shortly.")
-    r = run_turn(req.user_id, req.thread_id, req.message, req.dealer)
+    r = run_turn(req.user_id, req.thread_id, req.message, tenants.scope_of(dealer))
+    if dealer is not None:
+        tenants.record_ai(dealer["id"], r["tokens"]["in"], r["tokens"]["out"])
     return {"reply": r["reply"], "tool_calls": r["tool_calls"], "tokens": r["tokens"]}
+
+
+@router.get("/widget/config")
+def widget_config(request: Request):
+    """What the widget shows for its key: dealer name, what it sells, branding. Nothing secret."""
+    d = tenants.resolve_widget(request, required=True)
+    singular, plural = tenants.words(d["category"])
+    return {"dealer": d["id"], "name": d["name"], "category": d["category"], "what": singular, "plural": plural,
+            "city": d.get("city"), "tagline": d.get("tagline"), "brand_color": d.get("brand_color") or "#ff4f00",
+            "active": (d.get("status") or "active") == "active"}
 
 
 # ───────────────────────── catalogue ─────────────────────────
@@ -69,19 +107,19 @@ LISTING_FIELDS = (listings.c.id, listings.c.business_id, listings.c.category, li
 
 
 @router.get("/listings")
-def get_listings(category: Literal["property", "car"] | None = None, dealer: Dealer | None = None):
+def get_listings(category: Literal["property", "car"] | None = None,
+                 dealer: str | None = Query(default=None, pattern=DEALER_ID_PATTERN)):
     q = (select(*LISTING_FIELDS).join(businesses, businesses.c.id == listings.c.business_id)
          .where(listings.c.status == "available"))
     if category:
         q = q.where(listings.c.category == category)
-    if dealer:
-        q = q.where(listings.c.business_id == dealer)
+    q = q.where(listings.c.business_id == dealer) if dealer else q.where(businesses.c.showcase == 1)
     return rows(q.order_by(listings.c.category.desc(), listings.c.price_pkr))
 
 
 @router.get("/listings/{listing_id}/slots")
-def listing_slots(listing_id: str = Path(pattern=r"^[A-Za-z][0-9]{3}$"), days: int = 6):
-    """Next open visit / test-drive slots, so the showroom can show real availability before chatting."""
+def listing_slots(listing_id: str = Path(pattern=tenants.LISTING_ID_PATTERN), days: int = 6):
+    """Next open visit / test-drive slots, so a website can show real availability before chatting."""
     listing = one(select(listings.c.id).where(listings.c.id == listing_id.upper()))
     if not listing:
         raise HTTPException(404, "Listing not found")
@@ -96,7 +134,10 @@ def listing_slots(listing_id: str = Path(pattern=r"^[A-Za-z][0-9]{3}$"), days: i
 
 @router.get("/dealers")
 def dealers():
-    return rows(select(businesses.c.id, businesses.c.name, businesses.c.category, businesses.c.city))
+    """Public showcase dealers (used by the demo showroom and landing page), with their public widget keys."""
+    return [{"id": d["id"], "name": d["name"], "category": d["category"], "city": d.get("city"),
+             "tagline": d.get("tagline"), "brand_color": d.get("brand_color"), "widget_key": d.get("widget_key")}
+            for d in tenants.all_dealers() if d.get("showcase")]
 
 
 # ───────────────────────── customers and leads ─────────────────────────
@@ -114,7 +155,7 @@ class LeadIn(BaseModel):
     phone: str = Field(min_length=5, max_length=30, pattern=r"^[0-9+()\- ]+$")
     interest: Literal["property", "car"]
     message: str = Field(default="", max_length=1000)
-    listing_id: str | None = Field(default=None, pattern=r"^[A-Z][0-9]{3}$")
+    listing_id: str | None = Field(default=None, pattern=tenants.LISTING_ID_PATTERN)
     website: str = Field(default="", max_length=200)   # honeypot: real people never fill this hidden field
     elapsed_ms: int = Field(default=0, ge=0)            # time spent on the form; bots submit instantly
 
@@ -127,21 +168,33 @@ def reject_bots(form, kind: str):
 
 @router.post("/leads")
 def new_lead(lead: LeadIn, request: Request):
-    """Website call-back form: creates the customer and the agent replies instantly."""
+    """A website's call-back form: creates the customer and replies instantly (capture-only at the plan limit)."""
     enforce("lead_ip", client_ip(request), 5, 600)
     reject_bots(lead, "lead")
+    dealer = tenants.resolve_widget(request)
+    interest = dealer["category"] if dealer and dealer["category"] in ("property", "car") else lead.interest
+    owner = dealer["id"] if dealer and dealer["category"] != "all" else tenants.default_dealer_for(interest)
     user_id, token = new_customer()
-    dealer = BUSINESS_FOR[lead.interest]
-    upsert_lead(user_id, name=lead.name.strip(), phone=lead.phone.strip(), category=lead.interest,
-                source="web form", business_id=dealer)
+    upsert_lead(user_id, name=lead.name.strip(), phone=lead.phone.strip(), category=interest,
+                source="web form", business_id=owner)
     rt.store.put(("leads", user_id), "profile", {"name": lead.name.strip(), "phone": lead.phone.strip(),
-                                                 "interested_in": lead.interest})
+                                                 "interested_in": interest})
     about = f" about listing {lead.listing_id}" if lead.listing_id else ""
-    first = f"Hi, I'm {lead.name.strip()}. I'm interested in a {lead.interest}{about}. {lead.message.strip()}".strip()
-    r = run_turn(user_id, "t1", first, dealer)
-    upsert_lead(user_id, first_response_ms=r["latency_ms"])
+    first = f"Hi, I'm {lead.name.strip()}. I'm interested in a {interest}{about}. {lead.message.strip()}".strip()
+    billed = dealer or tenants.get(owner)
+    allowed = True
+    if billed is not None:
+        allowed, reason = tenants.admit_conversation(billed, thread_key(user_id, "t1"), client_ip(request))
+    if not allowed:
+        reply, ms = capture_turn(billed, user_id, "t1", first, reason), 0
+    else:
+        r = run_turn(user_id, "t1", first, tenants.scope_of(dealer) or owner)
+        reply, ms = r["reply"], r["latency_ms"]
+        if billed is not None:
+            tenants.record_ai(billed["id"], r["tokens"]["in"], r["tokens"]["out"])
+    upsert_lead(user_id, first_response_ms=ms or None)
     return {"user_id": user_id, "token": token, "thread_id": "t1", "first_message": first,
-            "reply": r["reply"], "response_ms": r["latency_ms"], "dealer": dealer}
+            "reply": reply, "response_ms": ms, "dealer": owner}
 
 
 class PilotIn(BaseModel):
