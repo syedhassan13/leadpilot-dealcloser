@@ -39,10 +39,13 @@ def owner(client):
     return login(client, "root-test-key")
 
 
+_prefixes = iter(f"Z{a}{b}" for a in "ABCDEFGHIJKLMNOPRSTUVWXY" for b in "ABCDEFGHIJKLMNOPRSTUVWXY")
+
+
 def new_dealer(c, owner, **extra):
     did = "t-" + uuid.uuid4().hex[:8]
     body = {"id": did, "name": f"Test Dealer {did}", "category": "property", "city": "Lahore",
-            "listing_prefix": "".join(ch for ch in uuid.uuid4().hex.upper() if ch.isalpha())[:3].ljust(3, "Q"), **extra}
+            "listing_prefix": next(_prefixes), **extra}
     r = c.post("/admin/owner/dealers", json=body, headers=owner)
     assert r.status_code == 201, r.text
     return r.json()

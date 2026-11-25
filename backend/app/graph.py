@@ -1,4 +1,4 @@
-"""The LangGraph StateGraph (Lab 05) plus persistence (Lab 00 checkpointer, Lab 06 store).
+r"""The LangGraph StateGraph (Lab 05) plus persistence (Lab 00 checkpointer, Lab 06 store).
 
     START -> guard --(safe)--> closer (create_agent: model <-> tools) -> memory -> END
                \--(blocked)--------------------------------------------^
