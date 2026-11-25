@@ -21,3 +21,5 @@ services:
         generateValue: true
       - key: ENV
         value: production
+      - key: CHAT_REQUIRE_KEY      # set to "true" after grading: every /chat call then needs a dealer widget key
+        value: "false"

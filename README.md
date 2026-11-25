@@ -198,11 +198,55 @@ Ids issued by the website (`lp_…`) also need their `X-User-Token`. Any other i
 
 ```html
 <script src="https://leadpilot-hassans-team1.vercel.app/assets/widget/leadpilot-chat.js" defer></script>
-<leadpilot-chat dealer="autohub"></leadpilot-chat>
+<leadpilot-chat key="wk_…"></leadpilot-chat>
 ```
-The console's **Install & settings** page shows the exact snippet for each dealer.
+`key` is the dealer's **public widget key**. The widget loads the dealer's name, what it sells and brand colour from
+`GET /widget/config`, and every chat is billed to that dealer. The console's **Install & settings** page shows the
+exact snippet. No CORS change is needed for a new domain: widget routes accept any origin, and a dealer can be
+locked to its own websites with **Websites allowed to use the chat**.
 
-For a dealer on their own domain, add it to the API's `ALLOWED_ORIGINS`.
+## Running it as a business (owner guide)
+
+Nothing about a dealer is hard-coded. A dealer is a row in `dc_businesses`, managed from the console.
+
+**Sign in as the owner** with the `*` key from `ADMIN_TOKENS`. The **Dealers** page shows every dealer's usage,
+leads, listings and AI cost, plus this month's revenue and margin.
+
+**Onboard a dealer (for example, Arani Real Estate):**
+1. **Dealers → New dealer.** Enter the name, id (`arani`), what they sell, a listing prefix (`AR`), plan, brand colour,
+   tagline, policies/FAQ text and, optionally, their websites.
+2. Copy the **console key**. It is shown once; only a SHA-256 hash is stored. Send it to the dealer privately.
+   **New console key** issues a replacement and signs out the old one.
+3. On the dealer's page, **import listings from a CSV**. The columns are `title, price` plus optional `id, location,
+   bedrooms|year, details`, and prices like `2.5 crore` or `85 lakh` work. In **Append** mode the file adds or updates
+   listings; in **Replace** mode listings not in the file are archived. Ids without a value become `AR001`, `AR002`…
+4. Send them the install snippet (it contains the public widget key).
+
+**Plans and limits.** One billed unit is one buyer conversation (a chat thread) per calendar month.
+
+| Plan | Price | Conversations / month | Follow-ups | Websites |
+|---|---|---|---|---|
+| Pilot | free | 300 | yes | 1 |
+| Starter | $20 | 500 | – | 1 |
+| Growth | $50 | 2,000 | yes | 3 |
+| Scale | $100 | 6,000 | yes | unlimited |
+| Internal | – | unlimited | yes | unlimited (showcase dealers) |
+
+- A conversation is counted once, atomically, the first time it is seen in the month. The plan allowance is used
+  first, then **extra credits**. The owner adds credits with a reason, and every change goes into a ledger.
+- **Alerts** go to the dealer's console at **80%** and **100%** (once each per month), and a banner appears on every page.
+- **At the limit, the dealer goes capture-only:** new buyers get a polite "a sales officer will get back to you" reply
+  with no AI call and no AI cost. The lead and any phone number they typed are still saved, and conversations that
+  started earlier may finish.
+- **Abuse protection:**
+  - Messages the safety guard blocks never count.
+  - One IP can start at most 10 new conversations per dealer per hour, so a public widget key can't be used to
+    drain a dealer's allowance.
+- **Suspend** a dealer to sign them out everywhere. Their chat drops to capture-only.
+
+**Locking down `/chat` after grading.** By default `/chat` without a key stays open, because the assignment's grader
+calls it with no key. Set `CHAT_REQUIRE_KEY=true` on Render after grading. Every chat then needs a valid
+`X-Widget-Key` and is billed to that dealer.
 
 ## Benchmark (live deployment)
 
@@ -243,13 +287,15 @@ Tests: `cd backend && pytest` · `python bench.py` · `python security_tests.py 
 
 ## Known limitations
 
-- **Demo data.** The showroom listings, prices and both businesses are fictional. Pricing plans are shown, but there is no billing integration yet.
-- **Dealer onboarding.** Dealer accounts are keys issued by the LeadPilot team (`ADMIN_TOKENS`). There is no self-serve signup. The landing page collects **pilot requests** instead, and they appear in the console.
+- **Demo data.** The showcase listings, prices and businesses are fictional.
+- **Billing.** Plans, limits, credits and alerts are enforced, but payment collection is manual: the owner changes the plan or adds credits after a dealer pays. There is no payment gateway.
+- **Alerts are in-console only.** The 80% and 100% alerts appear in the dealer console. Email, SMS and WhatsApp alerts are not built.
+- **Dealer onboarding.** The owner creates dealers in the console. There is no self-serve signup. The landing page collects **pilot requests** instead.
 - **Follow-up delivery.** Approved follow-ups arrive in the buyer's chat thread. WhatsApp, SMS and email delivery are not built.
 - **Free-tier hosting.** Render sleeps after 15 idle minutes. A keep-alive ping runs every 10 minutes, but a cold start can still take about 30–60 s.
-- **The widget on other sites.** It uses the host page's fonts if they load, otherwise system fonts. It needs the API's `ALLOWED_ORIGINS` updated for each new domain.
+- **The widget on other sites.** It uses the host page's fonts if they load, otherwise system fonts.
 - **Language.** It is tested in English. It understands everyday Roman Urdu confirmations but has not been tested for full Urdu conversations.
-- **Open `/chat`.** The open `/chat` endpoint is required by the assignment's grader. See the API section above.
+- **Open `/chat`.** The open `/chat` endpoint is required by the assignment's grader. Switch it off after grading with `CHAT_REQUIRE_KEY=true`.
 
 ## Workshop concepts used
 
