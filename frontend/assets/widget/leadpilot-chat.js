@@ -1,6 +1,7 @@
-/* LeadPilot chat widget: <leadpilot-chat dealer="autohub"></leadpilot-chat>
+/* LeadPilot chat widget: <leadpilot-chat key="wk_…"></leadpilot-chat>
    Embeddable on any website with one script tag. Shadow DOM keeps its styles isolated from the host page.
-   Attributes: dealer (skyline | autohub, optional), api (optional API base), open (start open).
+   Attributes: key (the dealer's public widget key: name, branding and billing come from LeadPilot),
+   api (optional API base), open (start open), dealer (legacy: a showcase dealer id, open mode only).
    Methods: open(), close(), ask(text), prefill(text), adoptLead({user_id, token, thread_id, name, first_message, reply, response_ms}) */
 (() => {
   if (customElements.get("leadpilot-chat")) return;
@@ -9,14 +10,14 @@
   const ASSET_BASE = new URL(".", SCRIPT_URL).href;
   const DEFAULT_API = ["localhost", "127.0.0.1"].includes(new URL(SCRIPT_URL).hostname)
     ? new URL(SCRIPT_URL).origin : "https://leadpilot-api-hhys.onrender.com";
-  const DEALERS = {
-    skyline: { name: "Skyline Realty", what: "property", hint: "Houses, apartments and plots in Islamabad",
-      quick: ["3 bed house under 2 crore", "Apartments with installments?", "What documents do I need?"] },
-    autohub: { name: "AutoHub Motors", what: "car", hint: "Inspected new and used cars, Islamabad",
-      quick: ["Automatic cars under 50 lakh", "Can I test drive on Saturday?", "Do you offer car financing?"] },
-    "": { name: "LeadPilot", what: "property or car", hint: "Property and cars from our partner dealers",
-      quick: ["I want a 3 bed house, budget 2 crore", "Cars under 50 lakh?", "Do you offer financing?"] },
+  // Nothing dealer-specific lives here: the widget asks the API who its key belongs to.
+  const QUICK = {
+    property: ["3 bed house under 2 crore", "Apartments with installments?", "What documents do I need?"],
+    car: ["Automatic cars under 50 lakh", "Can I test drive on Saturday?", "Do you offer car financing?"],
+    all: ["I want a 3 bed house, budget 2 crore", "Cars under 50 lakh?", "Do you offer financing?"],
   };
+  const GENERIC = { name: "LeadPilot", what: "property or car", category: "all", brand_color: null };
+  const configs = {};   // widget key -> promise of /widget/config
   const TOOL_LABEL = {
     search_inventory: "Searched live inventory", get_listing: "Opened listing details",
     check_availability: "Checked real availability", book_visit: "Booked the visit",
@@ -42,7 +43,7 @@
     </button>
     <section class="panel" id="panel" role="dialog" aria-modal="false" aria-label="Chat with the sales assistant" hidden>
       <header class="head">
-        <div class="who"><span class="avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="10.5" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-width="1.4"/><path d="M10.2 21.8 22.4 9.6M16.4 9.6h6v6" stroke="#ff4f00" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div class="who"><span class="avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="10.5" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-width="1.4"/><path class="arrow" d="M10.2 21.8 22.4 9.6M16.4 9.6h6v6" stroke="#ff4f00" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <div><strong class="dealer-name"></strong><span class="status"><i class="live"></i><span class="status-text">AI assistant · online</span></span></div></div>
         <div class="head-actions">
           <button class="icon menu-toggle" aria-label="Conversation options" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 20 20"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg></button>
@@ -66,7 +67,7 @@
     </section>`;
 
   class LeadPilotChat extends HTMLElement {
-    static get observedAttributes() { return ["dealer"]; }
+    static get observedAttributes() { return ["key", "dealer"]; }
 
     constructor() {
       super();
@@ -82,9 +83,10 @@
 
     siteBase() { return new URL("../../", ASSET_BASE).href; }
     get api() { return (this.getAttribute("api") || DEFAULT_API).replace(/\/$/, ""); }
-    get dealer() { const d = this.getAttribute("dealer") || ""; return DEALERS[d] ? d : ""; }
-    get info() { return DEALERS[this.dealer]; }
-    get threadKey() { return `leadpilot:thread:${this.dealer || "all"}`; }
+    get key() { return (this.getAttribute("key") || "").trim(); }
+    get dealer() { return this.key ? "" : (this.getAttribute("dealer") || "").trim(); }
+    get info() { return this.cfg || GENERIC; }
+    get threadKey() { return `leadpilot:thread:${this.key || this.dealer || "all"}`; }
     get me() { return store.get("leadpilot:customer"); }
     set me(v) { v ? store.set("leadpilot:customer", v) : store.del("leadpilot:customer"); }
     get threadId() {
@@ -119,11 +121,32 @@
       if (this.loaded) { this.loaded = false; if (!this.el.panel.hidden) this.loadHistory(); }
     }
 
-    applyDealer() {
+    /** Load the dealer behind the key (name, what it sells, brand colour), then redraw. */
+    async applyDealer() {
+      const key = this.key;
+      this.cfg = null;
+      this.paint();
+      if (!key) return;
+      if (!configs[key]) {
+        configs[key] = fetch(`${this.api}/widget/config`, { headers: { "X-Widget-Key": key } })
+          .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      }
+      const cfg = await configs[key];
+      if (!cfg) delete configs[key];        // try again next time (network blip)
+      if (key === this.key) { this.cfg = cfg; this.paint(); }
+    }
+
+    paint() {
       const i = this.info;
-      this.el.name.textContent = i.name;
-      this.root.querySelector(".launcher-text").textContent = this.dealer ? `Chat with ${i.name}` : "Ask about a listing";
-      this.el.quick.innerHTML = i.quick.map((t) => `<button type="button">${esc(t)}</button>`).join("");
+      const named = Boolean(this.cfg) || Boolean(this.dealer && this.getAttribute("dealer-name"));
+      const name = this.cfg ? i.name : (this.getAttribute("dealer-name") || i.name);
+      this.el.name.textContent = name;
+      this.root.querySelector(".launcher-text").textContent = named ? `Chat with ${name}` : "Ask about a listing";
+      const cat = this.cfg ? i.category : (this.getAttribute("category") || "all");
+      this.el.quick.innerHTML = (QUICK[cat] || QUICK.all).map((t) => `<button type="button">${esc(t)}</button>`).join("");
+      const color = /^#[0-9a-f]{6}$/i.test(i.brand_color || "") ? i.brand_color : "";
+      color ? this.style.setProperty("--signal", color) : this.style.removeProperty("--signal");
+      this.toggleAttribute("data-paused", Boolean(this.cfg && this.cfg.active === false));
     }
 
     open() {
@@ -169,6 +192,7 @@
       if (body !== undefined) headers["Content-Type"] = "application/json";
       const me = this.me;
       if (me && me.token) headers["X-User-Token"] = me.token;
+      if (this.key) headers["X-Widget-Key"] = this.key;
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 60000);
       try {
         const res = await fetch(this.api + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: ctrl.signal });
@@ -190,7 +214,9 @@
     greet() {
       this.el.quick.hidden = false;
       const name = this.me && this.me.name ? ` ${this.me.name.split(" ")[0]}` : "";
-      this.add("assistant", `Hi${name}! I'm the ${this.info.name} assistant. Tell me what ${this.info.what} you're looking for, your budget and when you plan to buy, and I'll find matching options and book a visit.`, { greeting: true });
+      const who = this.el.name.textContent || this.info.name;
+      const what = this.cfg ? this.info.what : ({ property: "property", car: "car" }[this.getAttribute("category")] || this.info.what);
+      this.add("assistant", `Hi${name}! I'm the ${who} assistant. Tell me what ${what} you're looking for, your budget and when you plan to buy, and I'll find matching options and book a visit.`, { greeting: true });
     }
 
     async loadHistory() {
@@ -216,7 +242,7 @@
       row.className = `msg ${role}${opts.followup ? " followup" : ""}`;
       if (opts.id) row.dataset.id = opts.id;
       let html = "";
-      if (opts.followup) html += `<span class="kicker">Follow-up from ${esc(this.info.name)}</span>`;
+      if (opts.followup) html += `<span class="kicker">Follow-up from ${esc(this.el.name.textContent)}</span>`;
       if (opts.tools && opts.tools.length) {
         html += `<ul class="activity">${opts.tools.map((t) => `<li><span aria-hidden="true">✓</span>${esc(TOOL_LABEL[t.name] || t.name)}</li>`).join("")}</ul>`;
       }
@@ -286,7 +312,8 @@
         if (!confirm("Delete all your data? This removes your chats, saved details and bookings and can't be undone.")) return;
         try {
           await this.http(`/customer/${encodeURIComponent(this.me.user_id)}`, { method: "DELETE" });
-          this.me = null; Object.keys(DEALERS).forEach((d) => store.del(`leadpilot:thread:${d || "all"}`));
+          this.me = null;
+          try { Object.keys(localStorage).filter((k) => k.startsWith("leadpilot:thread:")).forEach((k) => store.del(k)); } catch (err) {}
           this.el.log.innerHTML = ""; this.add("system", "All your data has been deleted.");
         } catch (e) { this.add("error", "Couldn't delete right now. Please try again."); }
       }

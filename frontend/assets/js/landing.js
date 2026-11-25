@@ -111,6 +111,11 @@ new IntersectionObserver((entries) => {
 }, { threshold: 0.3 }).observe($(".recorder"));
 
 // ───────── try it live: the real agent, in the real widget ─────────
+// The landing chat is billed to the platform demo dealer (category "all"); its public key comes from the API.
+request("/dealers", { timeout: 60000 }).then((list) => {
+  const demo = list.find((d) => d.category === "all" && d.widget_key);
+  if (demo) $("#chat").setAttribute("key", demo.widget_key);
+}).catch(() => {});
 $("#try-live").addEventListener("click", async () => {
   await customElements.whenDefined("leadpilot-chat");
   $("#chat").open();

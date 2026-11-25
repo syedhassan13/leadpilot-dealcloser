@@ -103,3 +103,6 @@ textarea:focus { outline: none; }
   .panel { position: fixed; inset: 0; width: 100%; height: 100%; border-radius: 0; border: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* the dealer's brand colour (set from /widget/config as --signal on the host) */
+.avatar .arrow { stroke: var(--signal); }

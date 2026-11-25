@@ -3,16 +3,19 @@ import { $, $$, esc, pkr, toast, formTimer, busy, dayLabel, themeToggle } from "
 
 themeToggle();
 
-const DEALERS = {
-  skyline: { name: "Skyline Realty", category: "property", eyebrow: "Real estate · Islamabad & Rawalpindi",
-    tagline: "Houses, apartments and plots in DHA, Bahria Town, Gulberg Greens, B-17, E-11 and F-11.",
+// Dealers come from the API (/dealers). Only the presentation of each category lives here.
+const KIND = {
+  property: { label: "Real estate",
     budgets: [["", "Any budget"], [10_000_000, "1 crore"], [20_000_000, "2 crore"], [50_000_000, "5 crore"], [100_000_000, "10 crore"]],
-    typeOf: (l) => /plot/i.test(l.title) ? "Plot" : /apartment/i.test(l.title) ? "Apartment" : "House" },
-  autohub: { name: "AutoHub Motors", category: "car", eyebrow: "Cars · G-9 & I-8 showrooms, Islamabad",
-    tagline: "Inspected new and used cars with a 200-point report and a 6-month engine warranty.",
+    typeOf: (l) => /plot/i.test(l.title) ? "Plot" : /apartment|flat/i.test(l.title) ? "Apartment" : "House",
+    placeholder: "e.g. 3 bed house, budget 2 crore, buying in 2 months" },
+  car: { label: "Cars",
     budgets: [["", "Any budget"], [3_500_000, "35 lakh"], [5_000_000, "50 lakh"], [7_500_000, "75 lakh"], [10_000_000, "1 crore"]],
-    typeOf: (l) => l.title.split(" ")[0] },
+    typeOf: (l) => l.title.split(" ")[0],
+    placeholder: "e.g. automatic sedan under 50 lakh, buying this month" },
 };
+let DEALERS = {};
+const kind = () => KIND[DEALERS[state.dealer].category];
 
 // Line-art glyphs, drawn in ink so they read as product drawings, not stock photos.
 const GLYPH = {
@@ -21,29 +24,44 @@ const GLYPH = {
   Plot: `<svg viewBox="0 0 120 90" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 70 40 40h66L80 70z" stroke-dasharray="5 4"/><path d="M14 70h66M80 70l26-30"/><path d="M60 52v-34" stroke="#ff4f00"/><path d="M60 18h18l-5 6 5 6H60" stroke="#ff4f00"/></svg>`,
   car: `<svg viewBox="0 0 120 90" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 62h100v-12c0-4-3-7-7-8l-16-4-12-14H38L26 38l-10 3c-4 1-6 5-6 9z"/><path d="M38 24h12v14H30zM56 24h14l10 14H56z"/><circle cx="32" cy="64" r="9" fill="var(--surface)"/><circle cx="88" cy="64" r="9" fill="var(--surface)"/><path d="M104 50h6" stroke="#ff4f00"/></svg>`,
 };
-const glyph = (l) => l.category === "car" ? GLYPH.car : GLYPH[DEALERS.skyline.typeOf(l)];
+const glyph = (l) => l.category === "car" ? GLYPH.car : GLYPH[KIND.property.typeOf(l)];
 
-const state = { dealer: "skyline", listings: [], type: "", current: null, slot: null };
+const state = { dealer: "", listings: [], type: "", current: null, slot: null };
 const chat = $("#chat");
 const ready = customElements.whenDefined("leadpilot-chat");
 
 // ───────── dealer switching (kept in the URL so links are shareable) ─────────
 function pickDealer(id, push = true) {
-  state.dealer = DEALERS[id] ? id : "skyline";
-  const d = DEALERS[state.dealer];
+  state.dealer = DEALERS[id] ? id : Object.keys(DEALERS)[0];
+  const d = DEALERS[state.dealer], k = kind();
   $$(".dealer-switch [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.dealer === state.dealer)));
   $("#dealer-title").textContent = d.name;
-  $("#dealer-eyebrow").textContent = d.eyebrow;
-  $("#dealer-tagline").textContent = d.tagline;
+  $("#dealer-eyebrow").textContent = [k.label, d.city].filter(Boolean).join(" · ");
+  $("#dealer-tagline").textContent = d.tagline || "";
   document.title = `${d.name} · Showroom demo · LeadPilot`;
-  $("#f-max").innerHTML = d.budgets.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
-  $("#c-msg").placeholder = d.category === "car" ? "e.g. automatic sedan under 50 lakh, buying this month" : "e.g. 3 bed house, budget 2 crore, buying in 2 months";
+  $("#f-max").innerHTML = k.budgets.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+  $("#c-msg").placeholder = k.placeholder;
   state.type = "";
-  chat.setAttribute("dealer", state.dealer);
-  if (push) history.replaceState(null, "", `?dealer=${state.dealer}`);
+  chat.setAttribute("key", d.widget_key);
+  if (push) history.replaceState(null, "", `?dealer=${encodeURIComponent(state.dealer)}`);
   load();
 }
-$$(".dealer-switch [role=tab]").forEach((b) => b.addEventListener("click", () => pickDealer(b.dataset.dealer)));
+$(".dealer-switch").addEventListener("click", (e) => { const b = e.target.closest("[role=tab]"); if (b) pickDealer(b.dataset.dealer); });
+
+async function start() {
+  try {
+    const list = (await request("/dealers", { timeout: 60000 })).filter((d) => KIND[d.category] && d.widget_key);
+    if (!list.length) throw new Error("No showcase dealers yet.");
+    DEALERS = Object.fromEntries(list.map((d) => [d.id, d]));
+  } catch (e) {
+    $("#grid").innerHTML = `<div class="error-state" role="alert">${esc(e.message)} <button class="btn btn-sm" id="retry">Try again</button></div>`;
+    $("#retry").addEventListener("click", start);
+    return;
+  }
+  $(".dealer-switch").innerHTML = Object.values(DEALERS).map((d, i) =>
+    `<button role="tab" data-dealer="${esc(d.id)}" aria-selected="false"><span class="mono">${String(i + 1).padStart(2, "0")}</span>${esc(d.name)}<small>${esc(KIND[d.category].label)}</small></button>`).join("");
+  pickDealer(new URLSearchParams(location.search).get("dealer"), false);
+}
 
 // ───────── listings ─────────
 function skeleton() {
@@ -53,7 +71,7 @@ function skeleton() {
 async function load() {
   skeleton(); $("#grid").setAttribute("aria-busy", "true"); $("#result-count").textContent = "";
   try {
-    state.listings = await request(`/listings?dealer=${state.dealer}`);
+    state.listings = await request(`/listings?dealer=${encodeURIComponent(state.dealer)}`);
     renderStats(); renderChips(); render();
   } catch (e) {
     $("#grid").innerHTML = `<div class="error-state" role="alert">${esc(e.message)} <button class="btn btn-sm" id="retry">Try again</button></div>`;
@@ -67,8 +85,7 @@ function renderStats() {
   dd.forEach((d) => d.classList.remove("skeleton"));
 }
 function renderChips() {
-  const d = DEALERS[state.dealer];
-  const types = [...new Set(state.listings.map(d.typeOf))].sort();
+  const types = [...new Set(state.listings.map(kind().typeOf))].sort();
   $("#type-chips").innerHTML = [["", "All"], ...types.map((t) => [t, t])]
     .map(([v, l]) => `<button type="button" data-type="${esc(v)}" aria-pressed="${v === state.type}">${esc(l)}</button>`).join("");
 }
@@ -80,13 +97,13 @@ $("#type-chips").addEventListener("click", (e) => {
 $("#filters").addEventListener("submit", (e) => e.preventDefault());
 
 function filtered() {
-  const d = DEALERS[state.dealer];
+  const k = kind();
   const q = $("#f-q").value.trim().toLowerCase();
   const max = Number($("#f-max").value) || Infinity;
   const dir = $("#f-sort").value === "desc" ? -1 : 1;
   return state.listings
     .filter((l) => l.price_pkr <= max)
-    .filter((l) => !state.type || d.typeOf(l) === state.type)
+    .filter((l) => !state.type || k.typeOf(l) === state.type)
     .filter((l) => !q || `${l.id} ${l.title} ${l.location} ${l.details}`.toLowerCase().includes(q))
     .sort((a, b) => (a.price_pkr - b.price_pkr) * dir);
 }
@@ -107,7 +124,7 @@ function render() {
       <div class="card-body">
         <h3>${esc(l.title)}</h3>
         <span class="loc">${esc(l.location)}</span>
-        <div class="specs">${spec}<span>${esc(DEALERS[state.dealer].typeOf(l))}</span></div>
+        <div class="specs">${spec}<span>${esc(kind().typeOf(l))}</span></div>
         <span class="price">${pkr(l.price_pkr)}</span>
         <div class="card-actions">
           <button class="btn btn-ink btn-sm" data-open="${esc(l.id)}" aria-label="View ${esc(l.title)} and book a ${verb}">View &amp; book</button>
@@ -133,7 +150,7 @@ async function openDetail(id) {
   $("#d-loc").textContent = l.location;
   $("#d-price").textContent = pkr(l.price_pkr);
   $("#d-details").textContent = l.details;
-  const specs = [["Type", DEALERS[state.dealer].typeOf(l)], l.bedrooms ? ["Bedrooms", l.bedrooms] : null, l.year ? ["Model year", l.year] : null,
+  const specs = [["Type", kind().typeOf(l)], l.bedrooms ? ["Bedrooms", l.bedrooms] : null, l.year ? ["Model year", l.year] : null,
     ["Viewing", l.category === "car" ? "Test drive, 45 min" : "Site visit, 45 min"]].filter(Boolean);
   $("#d-specs").innerHTML = specs.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
   updateBook();
@@ -181,7 +198,8 @@ form.addEventListener("submit", async (e) => {
   const data = Object.fromEntries(new FormData(form));
   const btn = $("button[type=submit]", form);
   try {
-    const r = await busy(btn, "Connecting you…", () => request("/leads", { method: "POST", timeout: 90000, body: {
+    const r = await busy(btn, "Connecting you…", () => request("/leads", { method: "POST", timeout: 90000,
+      headers: { "X-Widget-Key": DEALERS[state.dealer].widget_key }, body: {
       name: data.name, phone: data.phone, interest: DEALERS[state.dealer].category, message: data.message || "",
       website: data.website || "", elapsed_ms: elapsed() } }));
     await ready;
@@ -193,4 +211,4 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-pickDealer(new URLSearchParams(location.search).get("dealer") || "skyline", false);
+start();
