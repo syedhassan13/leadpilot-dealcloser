@@ -56,23 +56,26 @@ $("#logout").addEventListener("click", async () => {
 
 async function boot() {
   try { me = await api("/admin/me"); } catch (e) { if (!(e instanceof ApiError && e.status === 401)) showLogin(e.message); return; }
-  $("#who-name").textContent = me.name;
-  $("#who-role").textContent = me.business === "*" ? "LeadPilot team" : "Dealer";
-  $("#nav-pilots").hidden = me.business !== "*";
-  $("#nav-dealers").hidden = me.business !== "*";
-  $("#nav-usage").hidden = me.business === "*";
-  meAt = Date.now();
+  $("#who-name").textContent = me.member ? `${me.member.name} · ${me.name}` : me.name;
+  $("#who-role").textContent = ROLE_LABEL[me.role] || me.role;
+  $("#nav-pilots").hidden = !isOwner();
+  $("#nav-dealers").hidden = !isOwner();
+  $("#nav-usage").hidden = !isManager();
+  $("#nav-team").hidden = !isManager();
+  $("#nav-links").hidden = !isManager();
+  meAt = Date.now(); teamCache = null;
+  refreshBell();
   $("#login-view").hidden = true; $("#app-view").hidden = false;
   if (!location.hash) location.replace("#/overview");
   route();
 }
 
 // ───────── routing ─────────
-const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage,
+const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage, team: teamView, links: linksView,
   dealers: dealersView, dealer: dealerDetail, newdealer: newDealer };
 const TITLES = { overview: "Overview", pipeline: "Pipeline", leads: "Leads", lead: "Lead", bookings: "Bookings",
   followups: "Follow-ups", settings: "Install & settings", pilots: "Pilot requests", usage: "Plan & usage",
-  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer" };
+  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer", team: "Team", links: "Links & QR codes" };
 function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, "").split("?");
   const [name, id] = path.split("/");
@@ -99,7 +102,7 @@ async function route(silent = false) {
     if (me.business !== "*" && Date.now() - meAt > 120000) { me = await api("/admin/me"); meAt = Date.now(); }
     await VIEWS[r.view](view, r);
     if (r.stale()) return;
-    if (me.business !== "*" && r.view !== "usage") view.insertAdjacentHTML("afterbegin", bannerFor(me.plan));
+    if (isManager() && r.view !== "usage") view.insertAdjacentHTML("afterbegin", bannerFor(me.plan));
     $$("[data-w]", view).forEach((el) => { el.style.width = `${Number(el.dataset.w) || 0}%`; });
     lastLoad = Date.now(); stamp();
     if (!silent) view.focus({ preventScroll: true });
@@ -127,7 +130,9 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !typing && me) { e.preventDefault(); $("#q").focus(); }
 });
 // Gentle auto-refresh: only while the tab is visible and the dealer isn't editing something.
+let bellAt = 0;
 setInterval(() => {
+  if (me && !document.hidden && Date.now() - bellAt > 60000) { bellAt = Date.now(); refreshBell(); }
   const r = parseHash();
   const editing = $("#view").contains(document.activeElement) && /TEXTAREA|SELECT|INPUT/.test(document.activeElement.tagName);
   if (me && !document.hidden && !editing && ["overview", "pipeline", "followups", "bookings"].includes(r.view) && Date.now() - lastLoad > 55000) route(true);
@@ -170,6 +175,7 @@ async function overview(view, r) {
           <div class="funnel-row ${k}"><span>${k[0].toUpperCase() + k.slice(1)}</span><span class="track"><span class="fill" data-w="${Math.round(100 * (s.funnel[k] || 0) / total)}"></span></span><span class="n">${s.funnel[k] || 0}</span></div>`).join("")}
         </div></section>
     </div>
+    ${sourcesPanel(s)}
     <div class="grid-2b mt">
       <section class="panel"><div class="panel-head"><h2>Needs attention</h2><span class="muted">Hot leads without a visit</span></div>
         ${attention.length ? `<ul class="list">${attention.map((l) => `<li><a href="#/leads/${encodeURIComponent(l.user_id)}">
@@ -234,24 +240,29 @@ function card(l) {
 // ───────── leads table ─────────
 async function leads(view, r) {
   const q = r.params.get("q") || "", status = r.params.get("status") || "", score = r.params.get("score") || "";
+  const channel = r.params.get("channel") || "", assigned = r.params.get("assigned") || "";
   $("#q").value = q;
   let offset = 0;
-  const qs = () => new URLSearchParams(Object.entries({ q, status, score, limit: 100, offset }).filter(([, v]) => v !== "")).toString();
-  const first = await api(`/admin/leads?${qs()}`);
+  const qs = () => new URLSearchParams(Object.entries({ q, status, score, channel, assigned, limit: 100, offset }).filter(([, v]) => v !== "")).toString();
+  const [first, names] = await Promise.all([api(`/admin/leads?${qs()}`), teamNames()]);
   if (r.stale()) return;
+  const row = (l) => leadRow(l, names);
   const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`;
   view.innerHTML = `
     <form class="table-tools" id="lead-filters">
       <div class="field"><label for="lf-status">Stage</label><select class="select" id="lf-status">${opt("", status, "All stages")}${STAGES.map(([k, l]) => opt(k, status, l)).join("")}</select></div>
       <div class="field"><label for="lf-score">Score</label><select class="select" id="lf-score">${opt("", score, "All scores")}${["hot", "warm", "cold"].map((k) => opt(k, score, k[0].toUpperCase() + k.slice(1))).join("")}</select></div>
+      <div class="field"><label for="lf-channel">Source</label><select class="select" id="lf-channel">${opt("", channel, "All sources")}${Object.keys(CHANNEL).filter((c) => c !== "unknown").map((c) => opt(c, channel, channelName(c))).join("")}</select></div>
+      ${isManager() ? `<div class="field"><label for="lf-assigned">Salesperson</label><select class="select" id="lf-assigned">${opt("", assigned, "Everyone")}${opt("none", assigned, "Not assigned")}${Object.entries(names).map(([id, n]) => opt(id, assigned, esc(n))).join("")}</select></div>` : ""}
       ${q ? `<p class="small">Searching for <strong>“${esc(q)}”</strong> · <a href="#/leads">clear</a></p>` : ""}
     </form>
-    ${first.length ? `<div class="table-wrap"><table><thead><tr><th>Lead</th><th>Wants</th><th>Budget</th><th>Timeline</th><th>Score</th><th>Stage</th><th>Last active</th></tr></thead>
+    ${first.length ? `<div class="table-wrap"><table><thead><tr><th>Lead</th><th>Wants</th><th>Budget</th><th>Score</th><th>Stage</th><th>Source</th>${isAgent() ? "" : "<th>Owner</th>"}<th>Last active</th></tr></thead>
       <tbody id="lead-rows">${first.map(row).join("")}</tbody></table></div>
       ${first.length === 100 ? `<div class="more"><button class="btn btn-sm" id="more">Load more</button></div>` : ""}`
-      : empty(q || status || score ? "No leads match." : "No leads yet.", q || status || score ? "Try a different search or filter." : "Leads appear here the moment a buyer chats or fills a form.")}`;
+      : empty(q || status || score || channel || assigned ? "No leads match." : "No leads yet.", q || status || score || channel || assigned ? "Try a different search or filter." : isAgent() ? "Leads your manager gives you appear here." : "Leads appear here the moment a buyer chats or fills a form.")}`;
   $("#lead-filters").addEventListener("change", () => {
-    const p = new URLSearchParams(Object.entries({ q, status: $("#lf-status").value, score: $("#lf-score").value }).filter(([, v]) => v));
+    const p = new URLSearchParams(Object.entries({ q, status: $("#lf-status").value, score: $("#lf-score").value,
+      channel: $("#lf-channel").value, assigned: $("#lf-assigned")?.value || "" }).filter(([, v]) => v));
     location.hash = `#/leads${p.toString() ? "?" + p : ""}`;
   });
   $("#more")?.addEventListener("click", async (e) => {
@@ -263,12 +274,12 @@ async function leads(view, r) {
   view.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr) location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; }, { signal: r.signal });
   view.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-id]"); if (tr && e.key === "Enter") location.hash = `#/leads/${encodeURIComponent(tr.dataset.id)}`; }, { signal: r.signal });
 }
-function row(l) {
+function leadRow(l, names = {}) {
   return `<tr class="clickable" tabindex="0" data-id="${esc(l.user_id)}"><td><strong>${esc(leadName(l))}</strong><span class="sub">${esc(l.phone || l.source || "")}</span></td>
     <td>${esc(wants(l))}<span class="sub">${esc((l.preferences || "").slice(0, 46))}</span></td><td class="num">${l.budget_pkr ? pkr(l.budget_pkr, { short: true }) : "–"}</td>
-    <td>${esc(l.timeline || "–")}</td><td>${scoreTag(l.score)}</td><td>${statusTag(l.status)}</td><td class="num">${when(l.last_customer_at || l.created_at)}</td></tr>`;
+    <td>${scoreTag(l.score)}</td><td>${statusTag(l.status)}</td><td>${srcTag(l)}</td>
+    ${isAgent() ? "" : `<td>${l.assigned_to ? esc(names[l.assigned_to] || "Salesperson") : '<span class="muted">–</span>'}</td>`}<td class="num">${when(l.last_customer_at || l.created_at)}</td></tr>`;
 }
-
 // ───────── lead detail ─────────
 const TOOL_LABEL = { search_inventory: "Searched inventory", get_listing: "Opened a listing", check_availability: "Checked availability",
   book_visit: "Booked a visit", my_bookings: "Listed bookings", cancel_booking: "Cancelled a booking", save_lead_details: "Saved lead details", search_faq: "Searched policies" };
@@ -283,13 +294,18 @@ async function leadDetail(view, r) {
     <a class="back" href="#/leads">← All leads</a>
     <header class="lead-head">
       <div><span class="mono small muted">${esc(l.user_id)} · via ${esc(l.source || "chat")} · since ${when(l.created_at)}</span>
+        <p class="small src-line">${srcTag(l)}${d.source.link ? ` <span>from <strong>${esc(d.source.link.name)}</strong></span>` : ""}${d.source.utm?.campaign ? ` <span>campaign <strong>${esc(d.source.utm.campaign)}</strong></span>` : ""}
+          ${d.merged.length ? ` <span class="muted">· also contacted us ${d.merged.length} more time${d.merged.length > 1 ? "s" : ""} (${d.merged.map((m) => esc(channelName(m.channel || "unknown"))).join(", ")}), matched by phone</span>` : ""}</p>
         <h2>${esc(leadName(l))}</h2>
         <div class="facts">${scoreTag(l.score)}<span>${esc(wants(l))}</span>${l.budget_pkr ? `<span class="mono">${pkr(l.budget_pkr)}</span>` : ""}
           ${l.timeline ? `<span>${esc(l.timeline)}</span>` : ""}${l.phone ? `<a href="tel:${esc(l.phone.replace(/[^0-9+]/g, ""))}">${esc(l.phone)}</a>` : ""}
           ${l.first_response_ms ? `<span class="mono muted">first reply ${(l.first_response_ms / 1000).toFixed(1)}s</span>` : ""}</div></div>
       <div class="lead-actions">
         <div class="field"><label for="ld-status">Stage</label><select class="select" id="ld-status">${STAGES.map(([k, lab]) => `<option value="${k}" ${k === l.status ? "selected" : ""}>${lab}</option>`).join("")}</select></div>
-        <button class="btn btn-danger" id="ld-delete" title="When a buyer asks you to delete their data">Delete data</button>
+        ${isManager() ? `<div class="field"><label for="ld-assign">Salesperson</label><select class="select" id="ld-assign"><option value="">Not assigned</option>
+          ${d.team.map((m) => `<option value="${esc(m.id)}" ${m.id === l.assigned_to ? "selected" : ""}>${esc(m.name)}${m.role === "manager" ? " (manager)" : ""}</option>`).join("")}</select></div>`
+          : d.assignee ? `<div class="field"><span class="label">Salesperson</span><span>${esc(d.assignee.name)}</span></div>` : ""}
+        ${isAgent() ? "" : `<button class="btn btn-danger" id="ld-delete" title="When a buyer asks you to delete their data">Delete data</button>`}
       </div>
     </header>
     <div class="detail-grid">
@@ -326,7 +342,12 @@ async function leadDetail(view, r) {
     try { await api(`/admin/leads/${encodeURIComponent(l.user_id)}/status`, { method: "POST", body: { status: e.target.value } }); toast(`Stage set to ${e.target.value}`); }
     catch (ex) { toast(ex.message, { error: true }); e.target.value = l.status; }
   });
-  $("#ld-delete").addEventListener("click", async (e) => {
+  $("#ld-assign")?.addEventListener("change", async (e) => {
+    try { await api(`/admin/leads/${encodeURIComponent(l.user_id)}/assign`, { method: "POST", body: { member_id: e.target.value || null } });
+      toast(e.target.value ? `Assigned to ${e.target.selectedOptions[0].textContent}` : "Unassigned"); }
+    catch (ex) { toast(ex.message, { error: true }); e.target.value = l.assigned_to || ""; }
+  });
+  $("#ld-delete")?.addEventListener("click", async (e) => {
     if (!confirm(`Permanently delete everything about ${leadName(l)}: conversations, memory, bookings and follow-ups? This can't be undone.`)) return;
     try { await busy(e.target, "Deleting…", () => api(`/admin/leads/${encodeURIComponent(l.user_id)}`, { method: "DELETE" })); toast("Lead data deleted"); location.hash = "#/leads"; }
     catch (ex) { toast(ex.message, { error: true }); }
@@ -369,9 +390,9 @@ async function followups(view, r) {
   const drafts = list.filter((f) => f.status === "draft"), history = list.filter((f) => f.status !== "draft");
   setBadge(drafts.length);
   view.innerHTML = `
-    <div class="fu-bar"><button class="btn btn-primary" data-run="0">Run follow-up agent</button>
+    ${isAgent() ? `<p class="small muted">Follow-ups drafted for your leads wait here for your approval.</p>` : `<div class="fu-bar"><button class="btn btn-primary" data-run="0">Run follow-up agent</button>
       <button class="btn" data-run="1" title="Skip the day 1/3/7 wait. Useful for demos.">Draft now, ignore wait</button>
-      <span class="small muted">Drafts nudges for quiet leads (day 1, 3 and 7), up to 20 per run. Nothing is sent until you approve it.</span></div>
+      <span class="small muted">Drafts nudges for quiet leads (day 1, 3 and 7), up to 20 per run. Nothing is sent until you approve it.</span></div>`}
     <section class="panel"><div class="panel-head"><h2>Waiting for your approval</h2><span class="muted">${drafts.length}</span></div>
       ${drafts.length ? drafts.map((f) => `<article class="draft" data-id="${esc(f.id)}">
         <div class="top"><a href="#/leads/${encodeURIComponent(f.user_id)}">${esc(f.name || "Buyer")}</a>${scoreTag(f.score)}<span class="mono small muted">follow-up ${esc(f.step)} of 3 · drafted ${when(f.created_at)}</span></div>
@@ -415,7 +436,7 @@ async function settings(view, r) {
   const exp = session?.expires_at ? new Date(session.expires_at * 1000) : null;
   view.innerHTML = `
     <div class="grid-2">
-      <section class="panel"><div class="panel-head"><h2>Install the chat on your website</h2></div>
+      ${isAgent() ? `<section class="panel"><div class="panel-head"><h2>Your account</h2></div><div class="panel-body"><p>You're signed in as a salesperson. You see the leads your manager gives you, and you're alerted when one of them turns hot or books a visit.</p></div></section>` : `<section class="panel"><div class="panel-head"><h2>Install the chat on your website</h2></div>
         <div class="panel-body">
           <ol class="steps"><li><span>Paste these two lines before <code>&lt;/body&gt;</code> on every page of your website.</span></li>
             <li><span>The chat button appears bottom-right. It only shows and books <strong>your</strong> stock.</span></li>
@@ -424,10 +445,10 @@ async function settings(view, r) {
             <select class="select" id="snip-dealer">${dealers.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("")}</select></div>` : ""}
           <div class="snippet-bar"><span class="mono small">HTML</span><button class="btn btn-sm" id="copy">Copy snippet</button></div><div class="snippet" id="snippet">${snippet(mine)}</div>
           <p class="small muted mt">The key in the snippet is public: it only names your business. Your console key is different; never put it on a website.</p>
-        </div></section>
+        </div></section>`}
       <div class="stack gap-20">
         <section class="panel"><div class="panel-head"><h2>Your session</h2></div>
-          <div class="panel-body"><dl class="kv"><dt>Signed in as</dt><dd>${esc(me.name)}</dd><dt>Access</dt><dd>${me.business === "*" ? "All dealers" : "Your leads only"}</dd>
+          <div class="panel-body"><dl class="kv"><dt>Signed in as</dt><dd>${esc(me.name)}</dd><dt>Access</dt><dd>${isOwner() ? "All agencies" : isAgent() ? "Leads assigned to you" : "Everything in your agency"}</dd>
             <dt>Expires</dt><dd>${exp ? exp.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "–"}</dd></dl>
             <p class="small muted">Sessions last 8 hours. Signing out ends the session on the server.</p></div></section>
         <section class="panel"><div class="panel-head"><h2>Agent API</h2></div>
@@ -784,6 +805,191 @@ async function dealerDetail(view, r) {
       toast(`${out.created} added · ${out.updated} updated${out.archived ? ` · ${out.archived} archived` : ""}`); route(true);
     } catch (ex) { toast(ex.message, { error: true }); }
   });
+}
+
+// ───────── roles, sources and notifications ─────────
+const isOwner = () => me && me.business === "*";
+const isManager = () => me && me.role === "manager";
+const isAgent = () => me && me.role === "agent";
+const ROLE_LABEL = { owner: "LeadPilot team", manager: "Manager", agent: "Salesperson" };
+const CHANNEL = { website: "Website chat", page: "Agency page", form: "Website form", qr: "QR code", facebook: "Facebook",
+  instagram: "Instagram", whatsapp: "WhatsApp", google: "Google", tiktok: "TikTok", youtube: "YouTube", email: "Email",
+  sms: "SMS", print: "Print", portal: "Property portal", other: "Other", unknown: "Not tracked" };
+const channelName = (c) => CHANNEL[c] || CHANNEL.other;
+const srcTag = (l) => `<span class="src-tag">${esc(channelName(l.channel || "unknown"))}</span>`;
+let teamCache = null;
+async function teamNames() {
+  if (!isManager()) return {};
+  if (!teamCache) { try { teamCache = Object.fromEntries((await api("/admin/team")).members.map((m) => [m.id, m.name])); } catch (e) { teamCache = {}; } }
+  return teamCache;
+}
+
+async function refreshBell() {
+  if (!me || isOwner()) { $("#bell").hidden = true; return; }
+  $("#bell").hidden = false;
+  try {
+    const n = await api("/admin/notifications");
+    const b = $("#bell-n"); b.textContent = n.unread > 9 ? "9+" : n.unread; b.hidden = !n.unread;
+    $("#bell-list").innerHTML = n.items.length ? n.items.map((a) => `<li class="${a.read ? "" : "unread"}"><a href="#/leads/${encodeURIComponent(a.lead_id)}">
+      ${statusTag(a.level === "warning" ? "hot" : "booked")}<span>${esc(a.message)}</span><span class="mono small muted">${when(a.created_at)}</span></a></li>`).join("")
+      : `<li class="muted small">Nothing yet. Hot leads and booked visits for you appear here.</li>`;
+  } catch (e) { /* the next refresh retries */ }
+}
+$("#bell").addEventListener("click", async () => {
+  const panel = $("#bell-panel"), open = panel.hidden;
+  panel.hidden = !open; $("#bell").setAttribute("aria-expanded", String(open));
+  if (open) { await refreshBell(); try { await api("/admin/notifications/read", { method: "POST" }); $("#bell-n").hidden = true; } catch (e) {} }
+});
+document.addEventListener("click", (e) => {
+  if (!$("#bell-panel").hidden && !e.target.closest("#bell-panel, #bell")) { $("#bell-panel").hidden = true; $("#bell").setAttribute("aria-expanded", "false"); }
+});
+
+function sourcesPanel(s) {
+  const rows = s.by_channel || [];
+  if (!rows.length) return "";
+  const max = Math.max(1, ...rows.map((c) => c.leads));
+  return `<section class="panel mt"><div class="panel-head"><h2>Where leads come from</h2>${isManager() ? `<a class="small" href="#/links">Tracked links &amp; QR →</a>` : ""}</div>
+    <div class="grid-2 sources"><div class="panel-body funnel">${rows.map((c) => `<div class="funnel-row src"><span>${esc(channelName(c.channel))}</span>
+      <span class="track"><span class="fill" data-w="${Math.round(100 * c.leads / max)}"></span></span><span class="n">${c.leads}</span></div>
+      <p class="small muted src-sub">${c.booked} booked a visit · ${c.leads ? Math.round(100 * c.booked / c.leads) : 0}%</p>`).join("")}</div>
+      <div>${(s.by_link || []).length ? `<div class="table-wrap"><table><thead><tr><th>Tracked link</th><th>Leads</th><th>Visits</th></tr></thead><tbody>
+        ${s.by_link.map((l) => `<tr><td><strong>${esc(l.name)}</strong><span class="sub">${esc(channelName(l.channel))}</span></td><td class="num">${l.leads}</td><td class="num">${l.booked}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="panel-body small muted">Create tracked links and QR codes for boards, ads and posts to see which ones bring buyers.</p>`}</div></div></section>`;
+}
+
+// ───────── team (managers) ─────────
+async function teamView(view, r) {
+  if (!isManager()) { view.innerHTML = empty("Not available.", "Only your agency's manager can manage the team."); return; }
+  const t = await api("/admin/team");
+  if (r.stale()) return;
+  teamCache = Object.fromEntries(t.members.map((m) => [m.id, m.name]));
+  const roleOpt = (cur) => ["agent", "manager"].map((x) => `<option value="${x}" ${x === cur ? "selected" : ""}>${ROLE_LABEL[x]}</option>`).join("");
+  view.innerHTML = `
+    <div class="grid-2">
+      <section class="panel"><div class="panel-head"><h2>Your team</h2><span class="muted">${t.members.filter((m) => m.active).length} active</span></div>
+        ${t.members.length ? `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Leads</th><th>Visits</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+          ${t.members.map((m) => `<tr class="${m.active ? "" : "inactive"}"><td><strong>${esc(m.name)}</strong>${m.id === t.me ? ' <span class="tag ok">you</span>' : ""}<span class="sub">${esc(m.phone || "")}</span></td>
+            <td><select class="select" data-role="${esc(m.id)}" aria-label="Role for ${esc(m.name)}" ${m.active && m.id !== t.me ? "" : "disabled"}>${roleOpt(m.role)}</select></td>
+            <td class="num">${m.leads}</td><td class="num">${m.booked}</td><td class="num">${m.last_login_at ? when(m.last_login_at) : "never"}</td>
+            <td class="acts-row">${m.id === t.me ? "" : `${m.active ? `<button class="btn btn-sm" data-key="${esc(m.id)}">New key</button><button class="btn btn-sm btn-danger" data-active="0" data-id="${esc(m.id)}">Remove</button>`
+              : `<button class="btn btn-sm" data-active="1" data-id="${esc(m.id)}">Restore</button>`}`}</td></tr>`).join("")}</tbody></table></div>`
+          : empty("No team members yet.", "Add your salespeople so each one gets their own login and their own leads.")}
+        <div id="team-key" class="panel-body"></div></section>
+      <div class="stack gap-20">
+        <section class="panel"><div class="panel-head"><h2>Add a team member</h2></div><div class="panel-body">
+          <form id="add-member" class="form-grid">
+            <div class="field"><label for="tm-name">Name</label><input class="input" id="tm-name" name="name" required minlength="2" maxlength="80"></div>
+            <div class="field"><label for="tm-phone">Phone / WhatsApp</label><input class="input" id="tm-phone" name="phone" maxlength="30" inputmode="tel" pattern="[0-9+ \\(\\)\\-]{5,30}"></div>
+            <div class="field"><label for="tm-role">Role</label><select class="select" id="tm-role" name="role">${roleOpt("agent")}</select></div>
+            <div class="field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Add and create key</button></div>
+            <p class="hint full">Salespeople see only the leads given to them. Managers see everything and manage the team, links and settings.</p>
+          </form></div></section>
+        <section class="panel"><div class="panel-head"><h2>New leads go to</h2></div><div class="panel-body">
+          <div class="seg" role="group" aria-label="Assignment">${[["manual", "Manager assigns"], ["round_robin", "Next salesperson (round robin)"]].map(([k, l]) =>
+            `<button aria-pressed="${k === t.assign_mode}" data-mode="${k}">${l}</button>`).join("")}</div>
+          <p class="small muted mt">Round robin gives each new lead to the salesperson who received one longest ago. Hot leads and booked visits alert the assigned person.</p></div></section>
+      </div>
+    </div>`;
+  const keyOut = (name, key) => { $("#team-key").innerHTML = keyBox(`Console key for ${name} (shown once)`, key, "Send it to them privately. They sign in at this console with it."); $("#team-key").scrollIntoView({ block: "nearest" }); };
+  $("#add-member").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (!f.checkValidity()) { f.reportValidity(); return; }
+    try {
+      const out = await busy($("button[type=submit]", f), "Adding…", () => api("/admin/team", { method: "POST",
+        body: { name: val(f, "name"), phone: orNull(val(f, "phone")), role: val(f, "role") } }));
+      teamCache = null; await route(true); keyOut(out.member.name, out.key); toast(`${out.member.name} added`);
+    } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+  view.addEventListener("click", async (e) => {
+    copyHandler(e);
+    const mode = e.target.closest("[data-mode]"), k = e.target.closest("[data-key]"), act = e.target.closest("[data-active]");
+    try {
+      if (mode) { await api("/admin/settings", { method: "POST", body: { assign_mode: mode.dataset.mode } }); toast("Saved"); route(true); }
+      if (k) {
+        const name = t.members.find((m) => m.id === k.dataset.key)?.name || "them";
+        if (!confirm(`Issue a new key for ${name}? Their old key stops working and they're signed out.`)) return;
+        const out = await busy(k, "Issuing…", () => api(`/admin/team/${k.dataset.key}/key`, { method: "POST" })); keyOut(name, out.key);
+      }
+      if (act) {
+        const off = act.dataset.active === "0";
+        if (off && !confirm("Remove this person? They're signed out at once and their open leads go back to the manager.")) return;
+        await busy(act, "Saving…", () => api(`/admin/team/${act.dataset.id}`, { method: "POST", body: { active: !off } }));
+        teamCache = null; toast(off ? "Removed" : "Restored"); route(true);
+      }
+    } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+  view.addEventListener("change", async (e) => {
+    const s = e.target.closest("[data-role]"); if (!s) return;
+    try { await api(`/admin/team/${s.dataset.role}`, { method: "POST", body: { role: s.value } }); toast("Role changed. They'll sign in again."); }
+    catch (ex) { toast(ex.message, { error: true }); route(true); }
+  }, { signal: r.signal });
+}
+
+// ───────── tracked links and QR codes (managers) ─────────
+const LINK_CHANNELS = ["qr", "facebook", "instagram", "whatsapp", "google", "tiktok", "youtube", "print", "portal", "email", "sms", "website", "other"];
+async function linksView(view, r) {
+  if (!isManager()) { view.innerHTML = empty("Not available.", "Only your agency's manager can create tracked links."); return; }
+  const x = await api("/admin/links");
+  if (r.stale()) return;
+  const active = x.links.filter((l) => l.active), archived = x.links.filter((l) => !l.active);
+  const table = (list) => `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Link</th><th>Clicks</th><th>Leads</th><th>Visits</th><th></th></tr></thead><tbody>
+    ${list.map((l) => `<tr><td><strong>${esc(l.name)}</strong><span class="sub">${esc(channelName(l.channel))} → ${esc(l.target_url ? new URL(l.target_url).host : "LeadPilot page")}</span></td>
+      <td><code class="small">${esc(l.url)}</code></td><td class="num">${l.clicks}</td><td class="num">${l.leads}</td><td class="num">${l.booked}</td>
+      <td class="acts-row"><button class="btn btn-sm" data-copy="${esc(l.url)}">Copy</button>${l.active ? `<button class="btn btn-sm" data-qr="${esc(l.id)}" data-name="${esc(l.name)}">QR code</button>
+        <button class="btn btn-sm btn-ghost" data-archive="${esc(l.id)}">Archive</button>` : `<button class="btn btn-sm" data-restore="${esc(l.id)}">Restore</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+  view.innerHTML = `
+    <div class="grid-2">
+      <section class="panel"><div class="panel-head"><h2>Your LeadPilot page</h2>${x.page_enabled ? statusTag("active") : statusTag("off")}</div><div class="panel-body">
+        <p>Your listings, real visit times, a call-back form and the AI assistant on one page. Use it in ads and posts, or when you don't have a website.</p>
+        <div class="acts-row"><code>${esc(x.page_url)}</code><button class="btn btn-sm" data-copy="${esc(x.page_url)}">Copy</button>
+          ${x.page_enabled ? `<a class="btn btn-sm" href="${esc(x.page_url)}" target="_blank" rel="noopener">Open ↗</a>` : ""}
+          <button class="btn btn-sm btn-ghost" id="page-toggle">${x.page_enabled ? "Turn off" : "Turn on"}</button></div></div></section>
+      <section class="panel"><div class="panel-head"><h2>New tracked link</h2></div><div class="panel-body">
+        <form id="new-link" class="form-grid">
+          <div class="field"><label for="ln-name">Name</label><input class="input" id="ln-name" name="name" required minlength="2" maxlength="80" placeholder="DHA Phase 9 board"></div>
+          <div class="field"><label for="ln-ch">Where it's used</label><select class="select" id="ln-ch" name="channel">${LINK_CHANNELS.map((c) => `<option value="${c}">${esc(channelName(c))}</option>`).join("")}</select></div>
+          <div class="field full"><label for="ln-to">Send buyers to</label><select class="select" id="ln-to" name="target_url">
+            <option value="">Your LeadPilot page</option>${x.websites.filter((w) => w.startsWith("https://")).map((w) => `<option value="${esc(w)}/">${esc(w)}</option>`).join("")}</select>
+            <span class="hint">Your own website appears here once LeadPilot has approved it for your chat.</span></div>
+          <div class="full"><button class="btn btn-primary" type="submit">Create link</button></div>
+        </form></div></section>
+    </div>
+    <section class="panel mt"><div class="panel-head"><h2>Tracked links</h2><span class="muted">Each click and each lead is counted against its link</span></div>
+      ${active.length ? table(active) : empty("No links yet.", "Create one per board, ad, post or brochure to see which bring buyers.")}
+      <div id="qr-out" class="panel-body"></div></section>
+    ${archived.length ? `<details class="panel mt"><summary class="panel-head"><h2>Archived</h2><span class="muted">${archived.length}</span></summary>${table(archived)}</details>` : ""}`;
+  $("#new-link").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (!f.checkValidity()) { f.reportValidity(); return; }
+    try {
+      await busy($("button[type=submit]", f), "Creating…", () => api("/admin/links", { method: "POST",
+        body: { name: val(f, "name"), channel: val(f, "channel"), target_url: orNull(val(f, "target_url")) } }));
+      toast("Link created"); route(true);
+    } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
+  view.addEventListener("click", async (e) => {
+    copyHandler(e);
+    const qr = e.target.closest("[data-qr]"), arch = e.target.closest("[data-archive]"), rest = e.target.closest("[data-restore]");
+    try {
+      if (e.target.closest("#page-toggle")) { await api("/admin/settings", { method: "POST", body: { page_enabled: !x.page_enabled } }); route(true); }
+      if (arch || rest) {
+        if (arch && !confirm("Archive this link? Anyone who scans or clicks it lands on the LeadPilot home page instead.")) return;
+        await api(`/admin/links/${(arch || rest).dataset.archive || (arch || rest).dataset.restore}`, { method: "POST", body: { active: Boolean(rest) } });
+        route(true);
+      }
+      if (qr) {
+        const svg = await busy(qr, "Making…", () => api(`/admin/links/${qr.dataset.qr}/qr.svg`));
+        const src = `data:image/svg+xml;base64,${btoa(svg)}`;
+        const out = $("#qr-out");
+        out.innerHTML = `<div class="qr-box"><img alt="QR code for ${esc(qr.dataset.name)}" width="220" height="220"><div><strong>${esc(qr.dataset.name)}</strong>
+          <p class="small muted">Print it on boards, brochures and flyers. SVG stays sharp at any size.</p><a class="btn btn-sm btn-primary" download="leadpilot-${esc(qr.dataset.qr)}.svg">Download SVG</a></div></div>`;
+        $("img", out).src = src; $("a[download]", out).href = src;
+        out.scrollIntoView({ block: "nearest" });
+      }
+    } catch (ex) { toast(ex.message, { error: true }); }
+  }, { signal: r.signal });
 }
 
 // ───────── start ─────────

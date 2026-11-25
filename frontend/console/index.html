@@ -31,8 +31,8 @@
     <form class="login-form" id="login-form" novalidate>
       <p class="eyebrow">Dealer console</p>
       <h1 class="h2">Sign in</h1>
-      <p class="muted">Use the dealer key LeadPilot gave you. Each dealer only sees its own leads.</p>
-      <div class="field"><label for="key">Dealer key</label>
+      <p class="muted">Use your personal key, or the agency key LeadPilot gave you. Each person only sees what their role allows.</p>
+      <div class="field"><label for="key">Console key</label>
         <input class="input" id="key" type="password" required autocomplete="current-password" spellcheck="false"></div>
       <p class="field-error" id="login-error" role="alert"></p>
       <button class="btn btn-primary" type="submit">Sign in <span class="arrow">→</span></button>
@@ -54,6 +54,8 @@
       <a href="#/followups" data-route="followups"><svg viewBox="0 0 20 20"><path d="M4 5h12v8H9l-4 3v-3H4z"/></svg>Follow-ups<span class="badge" id="fu-badge" hidden></span></a>
       <a href="#/usage" data-route="usage" id="nav-usage" hidden><svg viewBox="0 0 20 20"><path d="M3 14a7 7 0 0 1 14 0"/><path d="M10 14l3.5-4.5"/></svg>Plan &amp; usage</a>
       <a href="#/dealers" data-route="dealers" id="nav-dealers" hidden><svg viewBox="0 0 20 20"><rect x="3" y="8" width="5" height="9"/><rect x="12" y="4" width="5" height="13"/><path d="M8 11h4"/></svg>Dealers</a>
+      <a href="#/team" data-route="team" id="nav-team" hidden><svg viewBox="0 0 20 20"><circle cx="7" cy="7" r="2.6"/><circle cx="14" cy="8" r="2.2"/><path d="M2.5 16c.6-2.6 2.4-4 4.5-4s3.9 1.4 4.5 4M12 12.4c.6-.3 1.3-.4 2-.4 1.8 0 3.2 1.1 3.6 3.2"/></svg>Team</a>
+      <a href="#/links" data-route="links" id="nav-links" hidden><svg viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM15 15h2v2h-2zM12 16h1M16 12h1"/></svg>Links &amp; QR</a>
       <a href="#/settings" data-route="settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>Install &amp; settings</a>
       <a href="#/pilots" data-route="pilots" id="nav-pilots" hidden><svg viewBox="0 0 20 20"><path d="M3 15l14-10M10 5h7v7"/></svg>Pilot requests</a>
     </nav>
@@ -72,6 +74,8 @@
         <input class="input" id="q" type="search" placeholder="Search leads by name, phone or need…  /" autocomplete="off">
       </form>
       <span class="updated mono" id="updated" aria-live="polite"></span>
+      <div class="bell-wrap"><button class="btn btn-sm btn-ghost bell" id="bell" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 14V9a5 5 0 0 1 10 0v5l1.5 2h-13zM8.5 17.5a1.6 1.6 0 0 0 3 0"/></svg><span class="badge" id="bell-n" hidden></span></button>
+        <div class="bell-panel" id="bell-panel" hidden><p class="bell-head">For you</p><ul id="bell-list"></ul></div></div>
       <button class="btn btn-sm" id="refresh" aria-label="Refresh data">Refresh</button>
       <button class="btn btn-ghost btn-sm theme-btn" data-theme-toggle><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13a6.5 6.5 0 0 0 0-13z" fill="currentColor"/></svg></button>
     </header>

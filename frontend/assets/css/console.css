@@ -261,3 +261,28 @@ td.num { font-family: var(--mono); white-space: nowrap; }
 .acts-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .csv-preview { max-height: 280px; overflow: auto; }
 @media (max-width: 720px) { .form-grid, .owner-kpis { grid-template-columns: 1fr; } }
+
+/* ───────── phase 1: sources, team, links, notifications ───────── */
+.src-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--rule-strong); border-radius: 2px;
+  font: 500 11px var(--mono); letter-spacing: .04em; white-space: nowrap; color: var(--ink-2); }
+.src-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 0; }
+.funnel-row.src .fill { background: var(--signal); }
+.src-sub { margin: -6px 0 6px 102px; }
+.sources { gap: 0; }
+tr.inactive td { opacity: .55; }
+.bell-wrap { position: relative; }
+.bell svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.bell .badge { position: absolute; top: -4px; right: -4px; margin: 0; }
+.bell-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(380px, 92vw); max-height: 70vh; overflow: auto; z-index: 30;
+  background: var(--surface); border: 1px solid var(--rule-strong); box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
+.bell-head { margin: 0; padding: 12px 16px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--rule); }
+.bell-panel ul { list-style: none; margin: 0; padding: 0; }
+.bell-panel li { border-bottom: 1px solid var(--rule); font-size: 14px; }
+.bell-panel li > a { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 12px 16px; color: inherit; text-decoration: none; }
+.bell-panel li > a .mono { grid-column: 2; }
+.bell-panel li.unread { background: var(--paper-2); }
+.bell-panel li.muted { padding: 16px; }
+.qr-box { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; border: 1px solid var(--rule); padding: 16px; background: #fff; color: #15140f; }
+.qr-box .muted { color: #5f5b51; }
+@media (max-width: 720px) { .src-sub { margin-left: 0; } }
+td .select { min-width: 140px; }
