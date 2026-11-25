@@ -237,11 +237,14 @@ def record_ai(dealer_id: str | None, tokens_in: int, tokens_out: int, turns: int
 
 
 # ───────────────────────── alerts ─────────────────────────
-def alert(dealer_id: str, dedupe: str, level: str, message: str):
+def alert(dealer_id: str, dedupe: str, level: str, message: str, member_id: str | None = None,
+          lead_id: str | None = None):
+    """One alert per dedupe key. member_id = a personal alert for one team member (else the whole agency)."""
     ins = _dialect_insert()
     with engine.begin() as c:
-        c.execute(ins(alerts).values(business_id=dealer_id, dedupe=dedupe[:80], level=level, message=message,
-                                     read=0, created_at=now()).on_conflict_do_nothing())
+        c.execute(ins(alerts).values(business_id=dealer_id, dedupe=dedupe[:80], level=level, message=message[:500],
+                                     member_id=member_id, lead_id=lead_id, read=0, created_at=now())
+                  .on_conflict_do_nothing())
 
 
 def _maybe_alert(dealer_id: str):

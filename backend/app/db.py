@@ -29,6 +29,35 @@ businesses = Table(                                       # one row per dealer (
     Column("console_key_hash", String(64)),               # sha256 of the dealer console key (never stored plain)
     Column("allowed_origins", Text),                      # websites allowed to use the widget (comma list)
     Column("showcase", Integer, default=0),               # 1 = shown on the public showroom/landing
+    Column("assign_mode", String(20), default="manual"),  # manual | round_robin (new leads -> next salesperson)
+    Column("page_enabled", Integer, default=1),           # 1 = the hosted agency page /a/<id> is public
+    Column("created_at", DateTime(timezone=True)),
+)
+
+members = Table(                                          # agency team: managers and salespeople (audit 3.5)
+    "dc_members", metadata,
+    Column("id", String(24), primary_key=True),           # random (audit 4.2)
+    Column("business_id", String(40), nullable=False, index=True),
+    Column("name", String(80), nullable=False),
+    Column("phone", String(40)),                          # for hot-lead alerts (WhatsApp in phase 2)
+    Column("role", String(20), nullable=False),           # manager | agent
+    Column("key_hash", String(64), unique=True),          # sha256 of the personal console key (never stored plain)
+    Column("active", Integer, default=1),
+    Column("last_assigned_at", DateTime(timezone=True)),  # round-robin order
+    Column("last_login_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True)),
+)
+
+links = Table(                                            # tracked links and QR codes: where leads come from
+    "dc_links", metadata,
+    Column("id", String(16), primary_key=True),           # random short slug used in /l/<id> and ?lp=<id>
+    Column("business_id", String(40), nullable=False, index=True),
+    Column("name", String(80), nullable=False),           # e.g. "DHA Phase 9 board"
+    Column("channel", String(20), nullable=False),        # qr | facebook | instagram | whatsapp | google | print | website | other
+    Column("target_url", String(300)),                    # null = the hosted agency page
+    Column("clicks", Integer, default=0),
+    Column("active", Integer, default=1),
+    Column("created_by", String(80)),
     Column("created_at", DateTime(timezone=True)),
 )
 
@@ -58,6 +87,8 @@ alerts = Table(
     Column("business_id", String(40), index=True),
     Column("dedupe", String(80), unique=True),            # e.g. arani:2026-12:80 -> each alert fires once
     Column("level", String(10)),                          # info | warning | critical
+    Column("member_id", String(24), index=True),          # set = a personal alert for one team member
+    Column("lead_id", String(80)),                        # the lead the alert is about, if any
     Column("message", Text),
     Column("read", Integer, default=0),
     Column("created_at", DateTime(timezone=True)),
@@ -102,6 +133,12 @@ leads = Table(
     Column("score", String(10), default="cold"),          # hot | warm | cold
     Column("status", String(20), default="new"),          # new | qualified | booked | lost
     Column("source", String(20), default="chat"),
+    Column("channel", String(20)),                        # first touch: website | page | form | qr | facebook | ...
+    Column("link_id", String(16)),                        # the tracked link that brought them, if any
+    Column("utm", JSON),                                  # {source, medium, campaign} from the landing URL
+    Column("phone_norm", String(20), index=True),         # +923001234567: one buyer across channels
+    Column("merged_into", String(80), index=True),        # set when this lead turned out to be a known buyer
+    Column("assigned_to", String(24), index=True),        # dc_members.id
     Column("first_response_ms", Integer),
     Column("followup_count", Integer, default=0),
     Column("last_thread_id", String(120)),
@@ -186,6 +223,8 @@ admin_sessions = Table(                                    # audit 2.5: expiring
     "dc_admin_sessions", metadata,
     Column("jti", String(64), primary_key=True),
     Column("business", String(40), nullable=False),
+    Column("member_id", String(24), index=True),          # null = an agency or platform key, not a personal one
+    Column("role", String(20)),                           # owner | manager | agent
     Column("created_at", DateTime(timezone=True)),
     Column("expires_at", DateTime(timezone=True)),
     Column("revoked", Integer, default=0),
@@ -232,8 +271,15 @@ LATER_COLUMNS = {
     "dc_businesses": {"tagline": "TEXT", "brand_color": "VARCHAR(9)", "policies": "TEXT", "listing_prefix": "VARCHAR(3)",
                       "plan": "VARCHAR(20)", "status": "VARCHAR(20)", "extra_credits": "INTEGER",
                       "widget_key": "VARCHAR(64)", "console_key_hash": "VARCHAR(64)", "allowed_origins": "TEXT",
-                      "showcase": "INTEGER", "created_at": "TIMESTAMP WITH TIME ZONE"},
+                      "showcase": "INTEGER", "created_at": "TIMESTAMP WITH TIME ZONE",
+                      "assign_mode": "VARCHAR(20)", "page_enabled": "INTEGER"},
+    "dc_leads": {"channel": "VARCHAR(20)", "link_id": "VARCHAR(16)", "utm": "JSON", "phone_norm": "VARCHAR(20)",
+                 "merged_into": "VARCHAR(80)", "assigned_to": "VARCHAR(24)"},
+    "dc_alerts": {"member_id": "VARCHAR(24)", "lead_id": "VARCHAR(80)"},
+    "dc_admin_sessions": {"member_id": "VARCHAR(24)", "role": "VARCHAR(20)"},
 }
+LATER_INDEXES = {"dc_leads": ("phone_norm", "merged_into", "assigned_to"), "dc_alerts": ("member_id",),
+                 "dc_admin_sessions": ("member_id",)}
 
 
 def migrate():
@@ -243,7 +289,10 @@ def migrate():
             if is_postgres():
                 for name, typ in cols.items():
                     c.execute(text(f'alter table {table} add column if not exists "{name}" {typ}'))
-                c.execute(text(f"create unique index if not exists ux_{table}_widget_key on {table} (widget_key)"))
+                if table == "dc_businesses":
+                    c.execute(text(f"create unique index if not exists ux_{table}_widget_key on {table} (widget_key)"))
+                for col in LATER_INDEXES.get(table, ()):
+                    c.execute(text(f"create index if not exists ix_{table}_{col} on {table} ({col})"))
             else:
                 have = {r[1] for r in c.execute(text(f"pragma table_info({table})"))}
                 for name, typ in cols.items():
@@ -275,6 +324,7 @@ def delete_customer(user_id: str):
     with engine.begin() as c:
         for table in (followups, bookings, chat_log, audit_log, leads):
             c.execute(delete(table).where(table.c.user_id == user_id))
+        c.execute(delete(alerts).where(alerts.c.lead_id == user_id))
 
 
 def rows(stmt) -> list[dict]:
@@ -297,11 +347,17 @@ def get_lead(user_id: str) -> dict | None:
 
 
 def upsert_lead(user_id: str, **fields) -> dict:
-    """Create the lead row if needed, then update only the fields given (None = leave as is)."""
+    """Create the lead row if needed, then update only the fields given (None = leave as is).
+    Then the lead hooks run (phone matching, auto-assignment, hot-lead alerts); they never raise."""
     fields = {k: v for k, v in fields.items() if v is not None}
-    if get_lead(user_id) is None:
+    from app import identity
+    if "phone" in fields:
+        fields["phone_norm"] = identity.normalize_phone(fields["phone"])
+    before = get_lead(user_id)
+    if before is None:
         base = {"score": "cold", "status": "new", "followup_count": 0, "created_at": now()}
         run(insert(leads).values(user_id=user_id, **{**base, **fields}))
     elif fields:
         run(update(leads).where(leads.c.user_id == user_id).values(**fields))
+    identity.after_change(before, get_lead(user_id))
     return get_lead(user_id)

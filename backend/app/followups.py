@@ -32,7 +32,7 @@ def due_leads(ignore_wait: bool = False, business: str = "*") -> list[dict]:
     # Only leads who had at least one real (not guard-blocked) exchange deserve a follow-up.
     engaged = {r["user_id"] for r in rows(select(chat_log.c.user_id).where(chat_log.c.blocked == 0).distinct())}
     due = []
-    q = select(leads).where(leads.c.status.in_(["new", "qualified"]))
+    q = select(leads).where(leads.c.status.in_(["new", "qualified"]), leads.c.merged_into.is_(None))
     if business != "*":
         q = q.where(leads.c.business_id == business)
     for lead in rows(q):
