@@ -120,7 +120,7 @@ $("#try-live").addEventListener("click", async () => {
 const form = $("#pilot-form");
 const elapsed = formTimer(form);
 $$("[data-plan]").forEach((a) => a.addEventListener("click", () => {
-  $("#p-msg").value = `Interested in the ${a.dataset.plan === "pro" ? "Pro" : "Basic"} plan.`;
+  $("#p-msg").value = `Interested in the ${a.dataset.plan} plan.`;
 }));
 form.addEventListener("submit", async (e) => {
   e.preventDefault();

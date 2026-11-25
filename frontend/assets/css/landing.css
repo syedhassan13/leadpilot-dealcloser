@@ -134,7 +134,7 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
 .checks span { color: var(--muted); font-size: 15px; }
 
 /* 06 · pricing */
-.plans { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink); max-width: 920px; }
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
 .plan { padding: 36px; display: flex; flex-direction: column; gap: 12px; position: relative; background: var(--surface); }
 .plan + .plan { border-left: 1px solid var(--ink); }
 .plan-pro { background: var(--paper); }
@@ -143,6 +143,7 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
 .price .mono { font-size: 34px; color: var(--ink); font-weight: 600; letter-spacing: -0.03em; }
 .plan ul { list-style: none; padding: 0; margin: 8px 0 18px; display: grid; gap: 9px; flex: 1; }
 .plan li { padding-left: 22px; position: relative; color: var(--ink-2); }
+.plan li strong { color: var(--ink); font-weight: 650; }
 .plan li::before { content: ""; position: absolute; left: 0; top: .6em; width: 12px; height: 1.5px; background: var(--signal); }
 .plan .btn { align-self: flex-start; }
 .plans-note { margin-top: 18px; }
@@ -174,6 +175,8 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
 
 /* ── responsive ── */
 @media (max-width: 1040px) {
+  .plans { grid-template-columns: 1fr; max-width: 560px; }
+  .plan + .plan { border-left: 0; border-top: 1px solid var(--ink); }
   .hero-grid, .engine-grid, .trust-grid, .faq-grid, .pilot-grid { grid-template-columns: 1fr; }
   .engine-grid .section-head { grid-row: auto; }
   .flightplan { grid-template-columns: 1fr 1fr; row-gap: 40px; }
