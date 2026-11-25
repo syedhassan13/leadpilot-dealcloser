@@ -66,7 +66,7 @@
   "rewrites": [
     {
       "source": "/a/:agency",
-      "destination": "/a/index.html"
+      "destination": "/a"
     }
   ]
 }

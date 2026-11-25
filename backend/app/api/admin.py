@@ -268,8 +268,9 @@ def stats(p: Principal = Depends(principal)):
 
     # where leads come from: channel and tracked link, with how many booked a visit
     booked = func.sum(case((leads.c.status == "booked", 1), else_=0)).label("booked")
-    ch = rows(select(func.coalesce(leads.c.channel, "unknown").label("channel"), func.count().label("leads"), booked)
-              .where(*conds).group_by(func.coalesce(leads.c.channel, "unknown")))
+    # group by the raw column (Postgres rejects GROUP BY on a coalesce whose literal is a separate bound parameter)
+    ch = [{**c, "channel": c["channel"] or "unknown"} for c in rows(
+        select(leads.c.channel, func.count().label("leads"), booked).where(*conds).group_by(leads.c.channel))]
     lk = rows(select(leads.c.link_id, func.count().label("leads"), booked)
               .where(*conds, leads.c.link_id.is_not(None)).group_by(leads.c.link_id))
     names = {r["id"]: r for r in rows(select(links.c.id, links.c.name, links.c.channel)
