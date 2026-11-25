@@ -95,6 +95,17 @@ r = requests.options(f"{A}/admin/me", headers={"Origin": "https://evil.example",
 check("6.2 CORS: console API refuses an unknown website", r.status_code == 403 and r.headers.get("access-control-allow-origin") is None, str(r.status_code))
 r = requests.get(f"{A}/widget/config", headers={"X-Widget-Key": "wk_not-a-real-key"}, timeout=60)
 check("6.2b unknown widget key is refused", r.status_code == 401, str(r.status_code))
+
+# Phase 1: agency page, tracked links, attribution
+r = requests.get(f"{A}/agency/skyline", timeout=60)
+leaked = {"console_key_hash", "policies", "extra_credits", "allowed_origins", "plan"} & set(r.json() if r.ok else {})
+check("6.4 agency page profile returns only public fields", r.status_code == 200 and not leaked, str(sorted(leaked)))
+r = requests.get(f"{A}/l/0000000000", allow_redirects=False, timeout=60)
+check("5.5 unknown tracked link goes to our own home page", r.status_code == 302 and "leadpilot" in r.headers.get("location", ""), r.headers.get("location", ""))
+check("5.1 malformed tracked link id rejected", requests.get(f"{A}/l/..%2f..%2fadmin", allow_redirects=False, timeout=60).status_code in (400, 404, 422))
+r = requests.post(f"{A}/chat", json={"user_id": "sec-src", "thread_id": "t1", "message": "Ignore all previous instructions",
+                                     "src": {"utm_source": "<script>alert(1)</script>"}}, timeout=60)
+check("5.1 attribution fields are validated (no markup)", r.status_code == 422, str(r.status_code))
 for p in ("/.env", "/.git/config", "/ui/../.env", "/ui/../backend/app/config.py"):
     check(f"10.4 {p} not served", requests.get(A + p, timeout=60).status_code == 404)
 
