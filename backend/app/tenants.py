@@ -273,3 +273,8 @@ def add_credits(dealer_id: str, delta: int, reason: str):
     invalidate()
     if delta > 0:
         alert(dealer_id, f"{dealer_id}:credit:{int(time.time())}", "info", f"{delta:,} conversation credits were added: {reason}.")
+
+
+def page_on(dealer: dict) -> bool:
+    """The hosted agency page is on unless a manager turned it off (NULL on agencies created before the setting)."""
+    return dealer.get("page_enabled") != 0

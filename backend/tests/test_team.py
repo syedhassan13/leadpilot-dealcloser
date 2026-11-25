@@ -255,3 +255,14 @@ def test_agency_page(client, owner):
     assert client.get("/agency/no-such-agency").status_code == 404
     client.post("/admin/settings", headers=a["mgr"], json={"page_enabled": False})
     assert client.get(f"/agency/{a['id']}").status_code == 404
+
+
+def test_agencies_created_before_the_page_setting_still_have_a_page(client, owner):
+    """Migration adds page_enabled as NULL to existing agencies: NULL must mean 'on' (regression)."""
+    from app import tenants
+    from app.db import businesses, run
+    a = agency(client, owner)
+    run(businesses.update().where(businesses.c.id == a["id"]).values(page_enabled=None, assign_mode=None))
+    tenants.invalidate()
+    assert client.get(f"/agency/{a['id']}").status_code == 200
+    assert client.get("/admin/me", headers=a["mgr"]).json()["page_enabled"] is True

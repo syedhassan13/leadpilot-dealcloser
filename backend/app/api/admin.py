@@ -170,7 +170,7 @@ def me(p: Principal = Depends(principal)):
     m = team.get(p.business, p.member_id) if p.member_id else None
     out = {"business": p.business, "name": d.get("name", p.business), "role": p.role, "category": d.get("category"),
            "member": team.public(m) if m else None, "assign_mode": d.get("assign_mode") or "manual",
-           "page_enabled": bool(d.get("page_enabled", 1))}
+           "page_enabled": tenants.page_on(d)}
     if p.role == "manager":
         out.update(widget_key=d.get("widget_key"), plan=tenants.summary(d) if d else None)
     return out
@@ -553,7 +553,7 @@ def agency_settings(body: SettingsIn, p: Principal = Depends(manager)):
         tenants.invalidate()
         log_event("agency_settings", p.member_id or "", {"business": p.business, "fields": sorted(changes)})
     d = tenants.get(p.business) or {}
-    return {"assign_mode": d.get("assign_mode") or "manual", "page_enabled": bool(d.get("page_enabled", 1))}
+    return {"assign_mode": d.get("assign_mode") or "manual", "page_enabled": tenants.page_on(d)}
 
 
 # ───────────────────────── tracked links and QR codes (managers) ─────────────────────────
@@ -609,7 +609,7 @@ def list_links(p: Principal = Depends(manager)):
     ls = rows(select(links).where(links.c.business_id == p.business).order_by(links.c.active.desc(), links.c.created_at.desc()))
     d = tenants.get(p.business) or {}
     return {"links": [link_out(l, stats_by.get(l["id"])) for l in ls], "page_url": f"{config.SITE_URL}/a/{p.business}",
-            "page_enabled": bool(d.get("page_enabled", 1)),
+            "page_enabled": tenants.page_on(d),
             "websites": [o.strip() for o in (d.get("allowed_origins") or "").split(",") if o.strip()]}
 
 

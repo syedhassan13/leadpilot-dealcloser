@@ -155,7 +155,7 @@ def listing_slots(listing_id: str = Path(pattern=tenants.LISTING_ID_PATTERN), da
 def agency_page(dealer_id: str = Path(pattern=DEALER_ID_PATTERN)):
     """What an agency's hosted LeadPilot page shows (public: name, branding and its public widget key)."""
     d = tenants.get(dealer_id)
-    if not d or d["category"] not in ("property", "car") or not d.get("page_enabled", 1):
+    if not d or d["category"] not in ("property", "car") or not tenants.page_on(d):
         raise HTTPException(404, "Page not found")
     singular, plural = tenants.words(d["category"])
     return {"id": d["id"], "name": d["name"], "category": d["category"], "what": singular, "plural": plural,
@@ -175,7 +175,7 @@ def follow_link(request: Request, link_id: str = Path(pattern=LINK_ID_PATTERN)):
         return RedirectResponse(config.SITE_URL + "/", 302, headers={"Cache-Control": "no-store"})
     if hit("link_click", f"{link_id}|{client_ip(request)}", 1, 3600):    # one counted click per person per hour
         run(links.update().where(links.c.id == link_id).values(clicks=links.c.clicks + 1))
-    target = l["target_url"] or (f"{config.SITE_URL}/a/{d['id']}" if d.get("page_enabled", 1) else config.SITE_URL + "/")
+    target = l["target_url"] or (f"{config.SITE_URL}/a/{d['id']}" if tenants.page_on(d) else config.SITE_URL + "/")
     sep = "&" if "?" in target else "?"
     return RedirectResponse(f"{target}{sep}lp={link_id}", 302, headers={"Cache-Control": "no-store"})
 

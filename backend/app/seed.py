@@ -93,6 +93,10 @@ def ensure_dealers():
                 fix["plan"] = "pilot"
             if not r["status"]:
                 fix["status"] = "active"
+            if r["page_enabled"] is None:
+                fix["page_enabled"] = 1
+            if not r["assign_mode"]:
+                fix["assign_mode"] = "manual"
             if r["extra_credits"] is None:
                 fix["extra_credits"] = 0
             if r["showcase"] is None and not showcase:
