@@ -67,8 +67,14 @@ check("admin session works", requests.get(f"{A}/admin/stats", headers=H, timeout
 check("6.4 admin lists are capped (limit=100000 -> max 200)", len(requests.get(f"{A}/admin/leads?limit=100000", headers=H, timeout=60).json()) <= 200)
 requests.post(f"{A}/admin/logout", headers=H, timeout=60)
 check("2.5 logout revokes the session", requests.get(f"{A}/admin/stats", headers=H, timeout=60).status_code == 401)
-codes = [requests.post(f"{A}/admin/login", json={"key": f"wrong-{i}"}, timeout=60).status_code for i in range(12)]
-check("2.4 login guessing is rate-limited (429 after 10 tries)", 429 in codes, str(codes))
+# The lockout is per client IP. Some ISPs (carrier-grade NAT) send consecutive connections from 2+ public IPs,
+# so keep guessing until locked out (at most 25 tries) instead of assuming every try comes from one address.
+codes = []
+for i in range(25):
+    codes.append(requests.post(f"{A}/admin/login", json={"key": f"wrong-{i}"}, timeout=60).status_code)
+    if codes[-1] == 429:
+        break
+check("2.4 login guessing is rate-limited (429 after 10 failed tries per IP)", 429 in codes, f"429 after {len(codes)} tries")
 
 # 6.1 chat rate limit per user (uses guard-blocked messages: 0 tokens)
 import concurrent.futures as cf   # parallel, so all requests land in the same 60-second window
@@ -83,8 +89,12 @@ check("6.1 /chat per-user rate limit: 30 at once -> 20 answered, rest limited (g
 docs = requests.get(f"{A}/docs", timeout=60).status_code
 check("10.3 /docs status reported", True, str(docs))
 print(f"      /docs -> {docs} (404 expected in production, 200 in local development)")
-r = requests.options(f"{A}/chat", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"}, timeout=60)
-check("6.2 CORS does not allow an unknown website", r.headers.get("access-control-allow-origin") not in ("*", "https://evil.example"))
+# Two-tier CORS: the console API only answers our own website; widget routes are embeddable anywhere
+# (no cookies; a dealer's websites are enforced per widget key).
+r = requests.options(f"{A}/admin/me", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"}, timeout=60)
+check("6.2 CORS: console API refuses an unknown website", r.status_code == 403 and r.headers.get("access-control-allow-origin") is None, str(r.status_code))
+r = requests.get(f"{A}/widget/config", headers={"X-Widget-Key": "wk_not-a-real-key"}, timeout=60)
+check("6.2b unknown widget key is refused", r.status_code == 401, str(r.status_code))
 for p in ("/.env", "/.git/config", "/ui/../.env", "/ui/../backend/app/config.py"):
     check(f"10.4 {p} not served", requests.get(A + p, timeout=60).status_code == 404)
 
