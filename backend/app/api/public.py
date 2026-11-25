@@ -175,6 +175,10 @@ def follow_link(request: Request, link_id: str = Path(pattern=LINK_ID_PATTERN)):
         return RedirectResponse(config.SITE_URL + "/", 302, headers={"Cache-Control": "no-store"})
     if hit("link_click", f"{link_id}|{client_ip(request)}", 1, 3600):    # one counted click per person per hour
         run(links.update().where(links.c.id == link_id).values(clicks=links.c.clicks + 1))
+    if l["target_url"] == "whatsapp:":                 # opens the agency's WhatsApp with a reference we can read back
+        from app import channels
+        wa = channels.wa_link(d["id"], f"Hi! I'd like to know more. (ref {link_id})")
+        return RedirectResponse(wa or f"{config.SITE_URL}/a/{d['id']}?lp={link_id}", 302, headers={"Cache-Control": "no-store"})
     target = l["target_url"] or (f"{config.SITE_URL}/a/{d['id']}" if tenants.page_on(d) else config.SITE_URL + "/")
     sep = "&" if "?" in target else "?"
     return RedirectResponse(f"{target}{sep}lp={link_id}", 302, headers={"Cache-Control": "no-store"})

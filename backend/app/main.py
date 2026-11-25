@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import config
 from app.agent import build_model
-from app.api import admin, customer, owner, public
+from app.api import admin, customer, owner, public, webhooks
 from app.db import init_db, lock_down_supabase
 from app.graph import build_graph, build_persistence
 from app.runtime import rt
@@ -116,6 +116,7 @@ app.include_router(public.router)
 app.include_router(customer.router)
 app.include_router(admin.router)
 app.include_router(owner.router)
+app.include_router(webhooks.router)
 
 
 @app.exception_handler(Exception)

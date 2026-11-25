@@ -6,7 +6,7 @@ Sending = appending the message to the customer's chat thread, where they see it
 from datetime import timedelta
 
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 
 from app import config, tenants
 from app.db import chat_log, followups, get_lead, leads, now, one, rows, run, upsert_lead
@@ -32,7 +32,8 @@ def due_leads(ignore_wait: bool = False, business: str = "*") -> list[dict]:
     # Only leads who had at least one real (not guard-blocked) exchange deserve a follow-up.
     engaged = {r["user_id"] for r in rows(select(chat_log.c.user_id).where(chat_log.c.blocked == 0).distinct())}
     due = []
-    q = select(leads).where(leads.c.status.in_(["new", "qualified"]), leads.c.merged_into.is_(None))
+    q = select(leads).where(leads.c.status.in_(["new", "qualified"]), leads.c.merged_into.is_(None),
+                            or_(leads.c.opted_out.is_(None), leads.c.opted_out == 0))
     if business != "*":
         q = q.where(leads.c.business_id == business)
     for lead in rows(q):
@@ -97,7 +98,11 @@ def send_followup(followup_id: int, graph, thread_key, edited_text: str | None =
     run(update(followups).where(followups.c.id == followup_id).values(status="sent", message=text, sent_at=now()))
     lead = get_lead(f["user_id"]) or {}
     upsert_lead(f["user_id"], followup_count=(lead.get("followup_count") or 0) + 1, last_agent_at=now())
-    return {"id": followup_id, "status": "sent"}
+    # Also deliver it where the buyer actually is (WhatsApp / Messenger / Instagram), within Meta's rules.
+    from app import channels
+    contact = channels.contact_lead(f["user_id"])
+    delivery = channels.send_to_lead(contact, text, "followup") if contact else "chat"
+    return {"id": followup_id, "status": "sent", "delivery": delivery}
 
 
 def skip_followup(followup_id: int) -> bool:

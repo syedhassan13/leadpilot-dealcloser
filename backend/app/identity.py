@@ -177,6 +177,19 @@ def _alerts(before: dict | None, after: dict):
         tenants.alert(after["business_id"], f"booked:{after['user_id']}"[:80], "info",
                       f"Visit booked by {_who(after)}. Confirm it with a call.",
                       member_id=after.get("assigned_to"), lead_id=after["user_id"])
+        _staff_whatsapp(after, f"Visit booked: {_who(after)}.")
+    if after.get("score") == "hot" and b.get("score") != "hot" and after.get("status") != "booked":
+        _staff_whatsapp(after, f"Hot lead: {_who(after)}.")
+
+
+def _staff_whatsapp(lead: dict, message: str):
+    """The assigned salesperson also hears on WhatsApp (if the agency set an alert template)."""
+    if not lead.get("assigned_to"):
+        return
+    from app import channels, team
+    m = team.get(lead["business_id"], lead["assigned_to"])
+    if m and m.get("active") and m.get("phone"):
+        channels.alert_staff(lead["business_id"], m["phone"], message)
 
 
 # ───────────────────────── attribution (first touch) ─────────────────────────
