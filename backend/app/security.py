@@ -100,11 +100,19 @@ SESSION_HOURS = 8
 def admin_login(key: str) -> dict | None:
     """Exchange a dealer key for a short-lived, revocable, signed session."""
     business = None
-    for token, biz in config.admin_tokens().items():
+    for token, biz in config.admin_tokens().items():        # owner + legacy keys from the environment
         if key and hmac.compare_digest(token, key):
             business = biz
+    if business is None:                                     # keys the owner issued from the console
+        from app import tenants
+        business = tenants.dealer_for_console_key(key)
     if business is None:
         return None
+    if business != "*":
+        from app import tenants
+        d = tenants.get(business)
+        if d is None or (d.get("status") or "active") != "active":
+            return None                                      # deleted or suspended dealers can't sign in
     jti = secrets.token_hex(16)
     exp = int(time.time()) + SESSION_HOURS * 3600
     run(insert(admin_sessions).values(jti=jti, business=business, created_at=now(),

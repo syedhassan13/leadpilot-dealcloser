@@ -15,7 +15,8 @@ from langgraph.runtime import Runtime
 from app import config, guard
 from app.agent import build_closer
 from app.db import get_lead, now, upsert_lead
-from app.tools import CATEGORY_OF, LeadContext
+from app import tenants
+from app.tools import LeadContext
 
 
 class LeadState(MessagesState):
@@ -47,7 +48,7 @@ def memory_node(state: LeadState, runtime: Runtime[LeadContext]) -> dict:
     # A lead belongs to the dealer whose website it first chatted on (dealer-scoped widget).
     first_dealer = ctx.dealer if ctx.dealer and not (lead or {}).get("business_id") else None
     upsert_lead(ctx.user_id, last_thread_id=ctx.thread_id, last_customer_at=now(), last_agent_at=now(),
-                business_id=first_dealer, category=CATEGORY_OF.get(first_dealer) if first_dealer else None)
+                business_id=first_dealer, category=tenants.category_of(first_dealer) if first_dealer else None)
     if runtime.store is not None:
         ns = ("leads", ctx.user_id)
         old = runtime.store.get(ns, "activity")

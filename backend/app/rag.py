@@ -61,3 +61,18 @@ def knowledge_store() -> InMemoryVectorStore:
 
 def search_knowledge(query: str, k: int = 2) -> list[Document]:
     return knowledge_store().similarity_search(query, k=k)
+
+
+# Each dealer can paste its own policies/FAQ in the owner console. Indexed on first use, re-indexed when edited.
+_dealer_stores: dict[str, tuple[str, InMemoryVectorStore]] = {}
+
+
+def search_dealer_policies(dealer_id: str, text: str, query: str, k: int = 2) -> list[Document]:
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    cached = _dealer_stores.get(dealer_id)
+    if not cached or cached[0] != digest:
+        parts = [p.strip() for p in re.split(r"\n\s*\n|\n(?=#)", text) if p.strip()]
+        docs = [Document(p, metadata={"source": f"{dealer_id}-policies"}) for p in parts[:200]]
+        cached = (digest, InMemoryVectorStore.from_documents(docs, LocalEmbeddings()))
+        _dealer_stores[dealer_id] = cached
+    return cached[1].similarity_search(query, k=k)

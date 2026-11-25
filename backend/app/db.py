@@ -11,13 +11,65 @@ from app import config
 
 metadata = MetaData()
 
-businesses = Table(
+businesses = Table(                                       # one row per dealer (tenant)
     "dc_businesses", metadata,
     Column("id", String(40), primary_key=True),
     Column("name", String(120), nullable=False),
-    Column("category", String(20), nullable=False),       # property | car
+    Column("category", String(20), nullable=False),       # property | car | all (platform demo)
     Column("city", String(60)),
     Column("phone", String(40)),
+    Column("tagline", Text),                              # one line shown in the showroom / widget
+    Column("brand_color", String(9)),                     # widget accent, e.g. #0a7d5a
+    Column("policies", Text),                             # this dealer's own FAQ / policies (RAG source)
+    Column("listing_prefix", String(3)),                  # listing ids: <prefix><number>, e.g. AR001
+    Column("plan", String(20), default="pilot"),
+    Column("status", String(20), default="active"),       # active | suspended
+    Column("extra_credits", Integer, default=0),          # bought/granted conversations beyond the plan
+    Column("widget_key", String(64), unique=True),        # public key the chat widget sends
+    Column("console_key_hash", String(64)),               # sha256 of the dealer console key (never stored plain)
+    Column("allowed_origins", Text),                      # websites allowed to use the widget (comma list)
+    Column("showcase", Integer, default=0),               # 1 = shown on the public showroom/landing
+    Column("created_at", DateTime(timezone=True)),
+)
+
+usage = Table(                                            # per dealer per month (YYYY-MM)
+    "dc_usage", metadata,
+    Column("business_id", String(40), primary_key=True),
+    Column("month", String(7), primary_key=True),
+    Column("conversations", Integer, default=0),
+    Column("credits_used", Integer, default=0),
+    Column("blocked", Integer, default=0),                # new conversations refused at the limit (capture-only)
+    Column("ai_turns", Integer, default=0),
+    Column("tokens_in", Integer, default=0),
+    Column("tokens_out", Integer, default=0),
+)
+
+conversations_seen = Table(                               # makes "count each conversation once" atomic
+    "dc_conversations_seen", metadata,
+    Column("business_id", String(40), primary_key=True),
+    Column("month", String(7), primary_key=True),
+    Column("thread", String(260), primary_key=True),
+    Column("allowed", Integer, default=1),
+)
+
+alerts = Table(
+    "dc_alerts", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("business_id", String(40), index=True),
+    Column("dedupe", String(80), unique=True),            # e.g. arani:2026-12:80 -> each alert fires once
+    Column("level", String(10)),                          # info | warning | critical
+    Column("message", Text),
+    Column("read", Integer, default=0),
+    Column("created_at", DateTime(timezone=True)),
+)
+
+credit_ledger = Table(                                    # every credit change, for audit and support
+    "dc_credit_ledger", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("business_id", String(40), index=True),
+    Column("delta", Integer),
+    Column("reason", String(200)),
+    Column("created_at", DateTime(timezone=True)),
 )
 
 listings = Table(
@@ -172,6 +224,31 @@ engine = _make_engine()
 
 def init_db():
     metadata.create_all(engine)
+    migrate()
+
+
+# Columns added after the first deployment. create_all() never alters existing tables, so add them here.
+LATER_COLUMNS = {
+    "dc_businesses": {"tagline": "TEXT", "brand_color": "VARCHAR(9)", "policies": "TEXT", "listing_prefix": "VARCHAR(3)",
+                      "plan": "VARCHAR(20)", "status": "VARCHAR(20)", "extra_credits": "INTEGER",
+                      "widget_key": "VARCHAR(64)", "console_key_hash": "VARCHAR(64)", "allowed_origins": "TEXT",
+                      "showcase": "INTEGER", "created_at": "TIMESTAMP WITH TIME ZONE"},
+}
+
+
+def migrate():
+    """Idempotent: adds missing columns on both Postgres and SQLite."""
+    with engine.begin() as c:
+        for table, cols in LATER_COLUMNS.items():
+            if is_postgres():
+                for name, typ in cols.items():
+                    c.execute(text(f'alter table {table} add column if not exists "{name}" {typ}'))
+                c.execute(text(f"create unique index if not exists ux_{table}_widget_key on {table} (widget_key)"))
+            else:
+                have = {r[1] for r in c.execute(text(f"pragma table_info({table})"))}
+                for name, typ in cols.items():
+                    if name not in have:
+                        c.execute(text(f"alter table {table} add column {name} {typ.replace(' WITH TIME ZONE', '')}"))
 
 
 def lock_down_supabase():

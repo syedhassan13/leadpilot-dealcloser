@@ -13,12 +13,12 @@ from langchain.tools import ToolRuntime, tool
 from sqlalchemy import and_, insert, select, update
 
 from app.db import bookings, businesses, listings, now, one, rows, run, upsert_lead
-from app.rag import search_knowledge
+from app import tenants
+from app.db import get_lead
+from app.rag import search_dealer_policies, search_knowledge
 
 PKT = timezone(timedelta(hours=5))                     # Pakistan time
 SLOTS = ["10:00", "12:00", "14:00", "16:00"]           # CUSTOM: visiting hours (see knowledge base)
-BUSINESS_FOR = {"property": "skyline", "car": "autohub"}
-CATEGORY_OF = {v: k for k, v in BUSINESS_FOR.items()}   # dealer id -> what it sells
 
 
 @dataclass
@@ -101,7 +101,7 @@ def search_inventory(category: Literal["property", "car"], runtime: ToolRuntime[
     keyword matches the title/details, e.g. "apartment", "Civic", "plot". Returns up to 5 matches with IDs."""
     dealer = dealer_of(runtime)
     if dealer:
-        category = CATEGORY_OF.get(dealer, category)
+        category = tenants.category_of(dealer) or category
     q = select(listings).where(listings.c.category == category, listings.c.status == "available")
     if dealer:
         q = q.where(listings.c.business_id == dealer)
@@ -229,9 +229,12 @@ def save_lead_details(runtime: ToolRuntime[LeadContext], name: str | None = None
     PKR, buying timeline (text + months from now), preferences (area, size, model, colour...) and financing
     need. Call it as soon as you learn any of these. Saved permanently for future conversations."""
     user = runtime.context.user_id
+    existing = get_lead(user) or {}
+    # A lead belongs to the dealer whose site it came from; set once, never moved by the model.
+    owner = None if existing.get("business_id") else (dealer_of(runtime) or tenants.default_dealer_for(category))
     lead = upsert_lead(user, name=name, phone=phone, category=category, budget_pkr=budget_pkr, timeline=timeline,
                        timeline_months=timeline_months, preferences=preferences, financing=financing,
-                       business_id=BUSINESS_FOR.get(category or ""))
+                       business_id=owner)
     score = "hot" if lead["status"] == "booked" else score_lead(lead["budget_pkr"], lead["timeline_months"], lead["timeline"])
     status = lead["status"]
     if status == "new" and lead["budget_pkr"] and (lead["timeline"] or lead["timeline_months"] is not None):
@@ -246,15 +249,18 @@ def save_lead_details(runtime: ToolRuntime[LeadContext], name: str | None = None
 
 # ── 8. Company knowledge (Lab 04: RAG) ──
 @tool
-def search_faq(question: str) -> str:
+def search_faq(question: str, runtime: ToolRuntime[LeadContext]) -> str:
     """Search company policies: financing/installments, visit hours and rules, test drives, documents needed,
     transfer process, cancellation, company info. Cite the [source]."""
-    docs = search_knowledge(question, k=2)
+    dealer = tenants.get(dealer_of(runtime))
+    if dealer and (dealer.get("policies") or "").strip():          # this dealer's own policies
+        docs = search_dealer_policies(dealer["id"], dealer["policies"], question, k=2)
+    elif dealer and not dealer.get("showcase"):                     # a dealer without written policies
+        return ("This dealer hasn't published policies on that. Don't guess: say a sales officer will confirm "
+                "the details, and offer to note the question or book a visit.")
+    else:                                                           # showcase dealers / platform demo
+        docs = search_knowledge(question, k=2)
     return "\n\n".join(f"[{d.metadata['source']}] {d.page_content}" for d in docs) or "Nothing found."
-
-
-def business_names() -> str:
-    return ", ".join(f"{b['name']} ({b['category']})" for b in rows(select(businesses)))
 
 
 TOOLS = [search_inventory, get_listing, check_availability, book_visit, my_bookings, cancel_booking,

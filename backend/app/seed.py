@@ -2,9 +2,9 @@
 
 All data is made up for the demo. Prices are in PKR (1 crore = 10,000,000; 1 lakh = 100,000).
 """
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, update
 
-from app.db import businesses, engine, listings
+from app.db import businesses, engine, listings, now
 
 BUSINESSES = [
     {"id": "skyline", "name": "Skyline Realty", "category": "property", "city": "Islamabad", "phone": "051-111-759-463"},
@@ -49,6 +49,17 @@ LISTINGS = [
 ]
 
 
+# Showcase dealers (public demo) and the platform demo tenant used by the landing page's "Try it live".
+SHOWCASE = {
+    "skyline": {"tagline": "Houses, apartments and plots in DHA, Bahria Town, Gulberg Greens, B-17, E-11 and F-11.",
+                "listing_prefix": "P", "brand_color": "#ff4f00"},
+    "autohub": {"tagline": "Inspected new and used cars with a 200-point report and a 6-month engine warranty.",
+                "listing_prefix": "C", "brand_color": "#ff4f00"},
+    "leadpilot": {"name": "LeadPilot demo", "category": "all", "city": "Islamabad", "phone": "",
+                  "tagline": "Property and cars from our showcase dealers.", "listing_prefix": "L", "brand_color": "#ff4f00"},
+}
+
+
 def seed():
     """Insert demo data only into empty tables, so restarts never duplicate or overwrite it."""
     with engine.begin() as c:
@@ -57,3 +68,32 @@ def seed():
         if c.execute(select(func.count()).select_from(listings)).scalar() == 0:
             rows = [{"bedrooms": None, "year": None, "image": "", "status": "available", **row} for row in LISTINGS]
             c.execute(insert(listings), rows)
+    ensure_dealers()
+
+
+def ensure_dealers():
+    """Backfill fields added later (plan, keys, branding) without touching anything a person already set."""
+    from app.tenants import new_widget_key
+    with engine.begin() as c:
+        existing = {r.id for r in c.execute(select(businesses.c.id))}
+        if "leadpilot" not in existing:
+            c.execute(insert(businesses).values(id="leadpilot", **{k: v for k, v in SHOWCASE["leadpilot"].items()}))
+        for r in c.execute(select(businesses)).mappings().all():
+            fix = {}
+            if not r["widget_key"]:
+                fix["widget_key"] = new_widget_key()
+            if not r["plan"]:
+                fix["plan"] = "scale" if r["id"] in SHOWCASE else "pilot"
+            if not r["status"]:
+                fix["status"] = "active"
+            if r["extra_credits"] is None:
+                fix["extra_credits"] = 0
+            if r["showcase"] is None:
+                fix["showcase"] = 1 if r["id"] in SHOWCASE else 0
+            if not r["created_at"]:
+                fix["created_at"] = now()
+            for k, v in SHOWCASE.get(r["id"], {}).items():
+                if k in ("tagline", "listing_prefix", "brand_color") and not r[k]:
+                    fix[k] = v
+            if fix:
+                c.execute(update(businesses).where(businesses.c.id == r["id"]).values(**fix))

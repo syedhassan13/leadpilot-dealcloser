@@ -8,12 +8,12 @@ from datetime import timedelta
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import insert, select, update
 
-from app import config
+from app import config, tenants
 from app.db import chat_log, followups, get_lead, leads, now, one, rows, run, upsert_lead
 from app.tools import pkr
 
 STEP_AFTER_HOURS = {1: 24, 2: 72, 3: 168}          # CUSTOM: follow-up cadence (day 1, 3, 7)
-FOLLOWUP_PROMPT = """You are LeadPilot's follow-up agent for Skyline Realty (property) and AutoHub Motors (cars).
+FOLLOWUP_PROMPT = """You are the follow-up assistant for {dealer}, which sells {plural}.
 Write ONE short WhatsApp-style follow-up (max 45 words) to a customer who stopped replying.
 Be friendly, reference what they wanted, give one reason to act now, and end with a simple question
 that invites them to book a site visit or test drive. No made-up prices, discounts or listings. No emojis spam."""
@@ -36,6 +36,9 @@ def due_leads(ignore_wait: bool = False, business: str = "*") -> list[dict]:
     if business != "*":
         q = q.where(leads.c.business_id == business)
     for lead in rows(q):
+        d = tenants.get(lead["business_id"])
+        if d and ((d.get("status") or "active") != "active" or not tenants.plan_of(d)["followups"]):
+            continue                      # suspended dealer, or a plan without the follow-up agent (Starter)
         step = (lead["followup_count"] or 0) + 1
         if (step > 3 or lead["user_id"] in pending or lead["user_id"] not in engaged
                 or not lead["last_thread_id"] or not lead["last_customer_at"]):
@@ -53,8 +56,13 @@ def draft_text(lead: dict, history: list, model) -> str:
                f"follow-up number: {lead['step']} of 3.")
     recent = "\n".join(f"{'Customer' if isinstance(m, HumanMessage) else 'Agent'}: {m.text[:200]}"
                        for m in history[-6:] if isinstance(m, (HumanMessage, AIMessage)) and m.text)
-    reply = model.invoke([SystemMessage(FOLLOWUP_PROMPT),
+    d = tenants.get(lead.get("business_id"))
+    prompt = FOLLOWUP_PROMPT.format(dealer=d["name"] if d else "the dealer",
+                                    plural=tenants.words(d["category"] if d else None)[1])
+    reply = model.invoke([SystemMessage(prompt),
                           HumanMessage(f"Customer profile: {profile}\nLast messages:\n{recent or '(none)'}")])
+    u = reply.usage_metadata or {}
+    tenants.record_ai(lead.get("business_id"), u.get("input_tokens", 0), u.get("output_tokens", 0))
     return reply.text.strip()
 
 

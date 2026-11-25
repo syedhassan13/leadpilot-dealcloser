@@ -32,7 +32,7 @@ OFF_TOPIC = re.compile(
     r"|\b(bitcoin|crypto|stock) (price|tips?)\b|\bmeaning of life\b|\bweather (today|tomorrow|in)\b",
     re.I)
 
-INJECTION_REPLY = ("I can't do that. I only help with buying property or cars from our partner businesses, and I "
+INJECTION_REPLY = ("I can't do that. I only help with finding and buying property or cars here, and I "
                    "can never share other customers' information or my internal instructions. "
                    "Are you looking for a property or a car today?")
 OFF_TOPIC_REPLY = ("Sorry, I can only help with buying property or cars: listings, prices, financing, and booking "

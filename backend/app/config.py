@@ -47,6 +47,20 @@ MAX_FOLLOWUPS_PER_RUN = int(os.getenv("MAX_FOLLOWUPS_PER_RUN", "20"))
 PRICE_IN_PER_M = 0.10
 PRICE_OUT_PER_M = 0.50
 
+# Lock-down switch. False keeps POST /chat open without a key (the assignment's grader needs that).
+# Set CHAT_REQUIRE_KEY=true after grading: then every chat must carry a dealer widget key.
+CHAT_REQUIRE_KEY = os.getenv("CHAT_REQUIRE_KEY", "false").lower() in ("1", "true", "yes")
+
+# Plans: monthly buyer-conversation allowance (None = no limit, for internal accounts) and features.
+PLANS = {
+    "pilot":    {"name": "Pilot",    "price_usd": 0,   "conversations": 300,  "followups": True,  "websites": 1},
+    "starter":  {"name": "Starter",  "price_usd": 20,  "conversations": 500,  "followups": False, "websites": 1},
+    "growth":   {"name": "Growth",   "price_usd": 50,  "conversations": 2000, "followups": True,  "websites": 3},
+    "scale":    {"name": "Scale",    "price_usd": 100, "conversations": 6000, "followups": True,  "websites": None},
+    "internal": {"name": "Internal", "price_usd": 0,   "conversations": None, "followups": True,  "websites": None},
+}
+ALERT_THRESHOLDS = (80, 100)   # % of the monthly allowance (plan + extra credits) that raises an alert
+
 
 def admin_tokens() -> dict[str, str]:
     """key -> business id ("*" = all businesses). Empty keys are ignored."""
