@@ -67,7 +67,7 @@ def test_owner_creates_dealer_and_dealer_signs_in(client, owner):
     assert client.post("/admin/owner/dealers", json=dup, headers=owner).status_code == 409
     # the issued key works, and only for that dealer
     me = client.get("/admin/me", headers=login(client, key)).json()
-    assert me["business"] == d["id"] and me["role"] == "Dealer" and me["plan"]["plan"] == "starter"
+    assert me["business"] == d["id"] and me["role"] == "manager" and me["plan"]["plan"] == "starter"
     assert client.get("/admin/owner/overview", headers=login(client, key)).status_code == 403
     assert client.get("/admin/owner/overview", headers=login(client, "sky-test-key")).status_code == 403
     ov = client.get("/admin/owner/overview", headers=owner).json()
