@@ -49,6 +49,12 @@ PRICE_OUT_PER_M = 0.50
 
 # Lock-down switch. False keeps POST /chat open without a key (the assignment's grader needs that).
 # Set CHAT_REQUIRE_KEY=true after grading: then every chat must carry a dealer widget key.
+# Public addresses. Tracked links (QR codes) live on the API (/l/<id>) and send buyers to the agency page on the
+# website (/a/<agency>). In development the API also serves the website, so both default to the local server.
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "https://leadpilot-api-hhys.onrender.com" if PRODUCTION
+                           else "http://127.0.0.1:8000").rstrip("/")
+SITE_URL = os.getenv("SITE_URL", "https://leadpilot-hassans-team1.vercel.app" if PRODUCTION
+                     else PUBLIC_API_URL).rstrip("/")
 CHAT_REQUIRE_KEY = os.getenv("CHAT_REQUIRE_KEY", "false").lower() in ("1", "true", "yes")
 
 # Plans: monthly buyer-conversation allowance (None = no limit, for internal accounts) and features.

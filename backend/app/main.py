@@ -49,7 +49,7 @@ app = FastAPI(title="LeadPilot API", version="2.0", lifespan=lifespan,
 # Two-tier CORS. The chat widget is embedded on dealers' own websites, so its public routes accept any origin
 # (no cookies are ever used; a dealer's own website list is enforced per widget key in tenants.check_origin).
 # Everything else (the dealer/owner console API) only answers our own website(s) in ALLOWED_ORIGINS.
-WIDGET_PATHS = ("/chat", "/widget/", "/customer/", "/leads", "/listings", "/dealers", "/health")
+WIDGET_PATHS = ("/chat", "/widget/", "/customer/", "/leads", "/listings", "/dealers", "/agency/", "/health")
 CORS_HEADERS = "Content-Type, Authorization, X-User-Token, X-Widget-Key"
 
 
@@ -130,5 +130,11 @@ if config.PRODUCTION:
         return {"service": "LeadPilot API", "status": "ok", "website": "https://leadpilot-hassans-team1.vercel.app"}
 elif FRONTEND.exists():
     # Development only: serve the website from the API so everything runs on one port.
-    # In production the website lives on Vercel (no second copy of the site).
+    # In production the website lives on Vercel (no second copy of the site; vercel.json rewrites /a/<agency>).
+    from fastapi.responses import FileResponse
+
+    @app.get("/a/{agency}", include_in_schema=False)
+    def agency_page_dev(agency: str):
+        return FileResponse(FRONTEND / "a" / "index.html")
+
     app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="site")

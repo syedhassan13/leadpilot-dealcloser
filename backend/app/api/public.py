@@ -10,12 +10,12 @@ from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import insert, select
 
-from app import config, guard, tenants
-from app.db import businesses, listings, now, one, pilot_requests, rows, run, upsert_lead
+from app import config, guard, identity, tenants
+from app.db import businesses, links, listings, now, one, pilot_requests, rows, run, upsert_lead
 from app.graph import thread_key
 from app.runtime import rt
 from app.security import (ID_PATTERN, SITE_USER_PREFIX, check_customer, client_ip, enforce, hit, log_event,
@@ -25,6 +25,21 @@ from app.tools import SLOTS, free_slots, today_pkt
 
 router = APIRouter()
 DEALER_ID_PATTERN = r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+LINK_ID_PATTERN = r"^[0-9a-f]{10}$"
+UTM = r"^[A-Za-z0-9 _.\-]{1,60}$"
+
+
+class Src(BaseModel):
+    """Where the buyer came from, read by the widget from the page address (?lp=<link>&utm_source=...)."""
+    link: str | None = Field(default=None, pattern=LINK_ID_PATTERN)
+    utm_source: str | None = Field(default=None, pattern=UTM)
+    utm_medium: str | None = Field(default=None, pattern=UTM)
+    utm_campaign: str | None = Field(default=None, pattern=UTM)
+    via: Literal["website", "page"] | None = None
+
+
+def src_of(src: "Src | None") -> dict | None:
+    return src.model_dump(exclude_none=True) if src else None
 
 
 # ───────────────────────── agent API ─────────────────────────
@@ -34,6 +49,7 @@ class ChatIn(BaseModel):
     thread_id: str = Field(pattern=ID_PATTERN)
     message: str = Field(max_length=config.MAX_MESSAGE_CHARS)
     dealer: str | None = Field(default=None, pattern=DEALER_ID_PATTERN)   # open mode only: scope to a showcase dealer
+    src: Src | None = None                                                # optional attribution (ignored without a key)
 
 
 class ChatOut(BaseModel):
@@ -79,13 +95,16 @@ def chat(req: ChatIn, request: Request, x_user_token: str | None = Header(defaul
                           "conversation, or try again in an hour.")
         if not allowed:
             log_event("chat_capture_only", req.user_id, {"dealer": dealer["id"], "reason": reason})
-            return graded(capture_turn(dealer, req.user_id, req.thread_id, req.message, reason))
+            reply = capture_turn(dealer, req.user_id, req.thread_id, req.message, reason)
+            identity.touch(req.user_id, dealer, src_of(req.src))
+            return graded(reply)
     if not hit("ai_global_day", "all", config.AI_TURNS_PER_DAY, 86400):
         log_event("ai_daily_cap_reached", req.user_id)
         return graded("Our assistant is busy right now. A sales officer will contact you shortly.")
     r = run_turn(req.user_id, req.thread_id, req.message, tenants.scope_of(dealer))
     if dealer is not None:
         tenants.record_ai(dealer["id"], r["tokens"]["in"], r["tokens"]["out"])
+        identity.touch(req.user_id, dealer, src_of(req.src))
     return {"reply": r["reply"], "tool_calls": r["tool_calls"], "tokens": r["tokens"]}
 
 
@@ -132,6 +151,35 @@ def listing_slots(listing_id: str = Path(pattern=tenants.LISTING_ID_PATTERN), da
     return out
 
 
+@router.get("/agency/{dealer_id}")
+def agency_page(dealer_id: str = Path(pattern=DEALER_ID_PATTERN)):
+    """What an agency's hosted LeadPilot page shows (public: name, branding and its public widget key)."""
+    d = tenants.get(dealer_id)
+    if not d or d["category"] not in ("property", "car") or not d.get("page_enabled", 1):
+        raise HTTPException(404, "Page not found")
+    singular, plural = tenants.words(d["category"])
+    return {"id": d["id"], "name": d["name"], "category": d["category"], "what": singular, "plural": plural,
+            "city": d.get("city"), "phone": d.get("phone"), "tagline": d.get("tagline"),
+            "brand_color": d.get("brand_color") or "#ff4f00", "widget_key": d.get("widget_key"),
+            "active": (d.get("status") or "active") == "active"}
+
+
+@router.get("/l/{link_id}", include_in_schema=False)
+def follow_link(request: Request, link_id: str = Path(pattern=LINK_ID_PATTERN)):
+    """A tracked link / QR code: count the click, then send the buyer to the agency page (or the agency's own
+    approved website) with ?lp=<link> so the chat knows where they came from. Never an open redirect (audit 5.5):
+    the target is fixed when the link is created and checked against the agency's approved websites."""
+    l = one(select(links).where(links.c.id == link_id))
+    d = tenants.get(l["business_id"]) if l else None
+    if not l or not l["active"] or not d or (d.get("status") or "active") != "active":
+        return RedirectResponse(config.SITE_URL + "/", 302, headers={"Cache-Control": "no-store"})
+    if hit("link_click", f"{link_id}|{client_ip(request)}", 1, 3600):    # one counted click per person per hour
+        run(links.update().where(links.c.id == link_id).values(clicks=links.c.clicks + 1))
+    target = l["target_url"] or (f"{config.SITE_URL}/a/{d['id']}" if d.get("page_enabled", 1) else config.SITE_URL + "/")
+    sep = "&" if "?" in target else "?"
+    return RedirectResponse(f"{target}{sep}lp={link_id}", 302, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/dealers")
 def dealers():
     """Public showcase dealers (used by the demo showroom and landing page), with their public widget keys."""
@@ -158,6 +206,7 @@ class LeadIn(BaseModel):
     listing_id: str | None = Field(default=None, pattern=tenants.LISTING_ID_PATTERN)
     website: str = Field(default="", max_length=200)   # honeypot: real people never fill this hidden field
     elapsed_ms: int = Field(default=0, ge=0)            # time spent on the form; bots submit instantly
+    src: Src | None = None
 
 
 def reject_bots(form, kind: str):
@@ -179,6 +228,7 @@ def new_lead(lead: LeadIn, request: Request):
                 source="web form", business_id=owner)
     rt.store.put(("leads", user_id), "profile", {"name": lead.name.strip(), "phone": lead.phone.strip(),
                                                  "interested_in": interest})
+    identity.touch(user_id, dealer or tenants.get(owner), src_of(lead.src), default="form")
     about = f" about listing {lead.listing_id}" if lead.listing_id else ""
     first = f"Hi, I'm {lead.name.strip()}. I'm interested in a {interest}{about}. {lead.message.strip()}".strip()
     billed = dealer or tenants.get(owner)
