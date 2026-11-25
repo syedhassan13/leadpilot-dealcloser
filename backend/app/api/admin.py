@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select, update
 
-from app import config
-from app.db import (audit_log, bookings, businesses, chat_log, followups, get_lead, leads, listings, now, one,
-                    pilot_requests, rows, run, upsert_lead)
+from app import config, tenants
+from app.db import (admin_sessions, alerts, audit_log, bookings, businesses, chat_log, credit_ledger, engine, followups,
+                    get_lead, leads, listings, now, one, pilot_requests, rows, run, upsert_lead, usage)
 from app.followups import run_followups, send_followup, skip_followup
 from app.graph import thread_key
 from app.runtime import rt
@@ -98,10 +98,33 @@ def day_key(v) -> str:
 @router.get("/admin/me")
 def me(request: Request, business: str = Depends(admin_scope)):
     if business == "*":
-        return {"business": "*", "name": "All dealers", "role": "LeadPilot team"}
-    b = one(select(businesses).where(businesses.c.id == business))
-    return {"business": business, "name": b["name"] if b else business, "role": "Dealer",
-            "category": b["category"] if b else None}
+        return {"business": "*", "name": "LeadPilot owner", "role": "Owner"}
+    d = tenants.get(business) or {}
+    return {"business": business, "name": d.get("name", business), "role": "Dealer", "category": d.get("category"),
+            "widget_key": d.get("widget_key"), "plan": tenants.summary(d) if d else None}
+
+
+# ───────────────────────── plan, usage and alerts (dealer view) ─────────────────────────
+
+@router.get("/admin/usage")
+def my_usage(dealer: str | None = None, business: str = Depends(admin_scope)):
+    """This month's usage meter, recent months and alerts. The owner can look at any dealer with ?dealer=."""
+    target = dealer if business == "*" and dealer else business
+    d = tenants.get(target)
+    if d is None:
+        raise HTTPException(404, "Dealer not found")
+    history = rows(select(usage).where(usage.c.business_id == target).order_by(usage.c.month.desc()).limit(12))
+    for h in history:
+        h["cost_usd"] = round((h["tokens_in"] or 0) / 1e6 * config.PRICE_IN_PER_M + (h["tokens_out"] or 0) / 1e6 * config.PRICE_OUT_PER_M, 4)
+    return {"summary": tenants.summary(d), "history": history, "plans": config.PLANS,
+            "alerts": rows(select(alerts).where(alerts.c.business_id == target).order_by(alerts.c.id.desc()).limit(20))}
+
+
+@router.post("/admin/alerts/read")
+def read_alerts(business: str = Depends(admin_scope)):
+    if business != "*":
+        run(update(alerts).where(and_(alerts.c.business_id == business, alerts.c.read == 0)).values(read=1))
+    return {"ok": True}
 
 
 @router.get("/admin/stats")
