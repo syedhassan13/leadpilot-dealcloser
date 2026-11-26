@@ -116,8 +116,11 @@ def for_business(business_id: str, kind: str | None = None) -> list[dict]:
     return rows(q.order_by(channels.c.kind, channels.c.created_at))
 
 
-def whatsapp_of(business_id: str) -> dict | None:
-    return next((c for c in for_business(business_id, "whatsapp") if c["status"] == "active"), None)
+def whatsapp_of(business_id: str, demo: bool = False) -> dict | None:
+    """The agency's live WhatsApp channel (or, with demo=True, its demo one if there's no live one)."""
+    chs = for_business(business_id, "whatsapp")
+    return next((c for c in chs if c["status"] == "active"), None) or \
+        (next((c for c in chs if c["status"] == "demo"), None) if demo else None)
 
 
 def settings_of(ch: dict | None) -> dict:
@@ -189,11 +192,15 @@ def _body(ch: dict, item: dict) -> tuple[str, dict]:
 
 
 def deliver(outbox_id: int) -> bool:
-    """Send one queued message. Retryable failures are rescheduled with backoff; others fail for good."""
+    """Send one queued message. Retryable failures are rescheduled with backoff; others fail for good.
+    Demo channels record the message instead of sending it (no Meta account needed to show the product)."""
     item = one(select(outbox).where(outbox.c.id == outbox_id))
     if not item or item["status"] != "queued":
         return False
     ch = one(select(channels).where(channels.c.id == item["channel_id"]))
+    if ch and ch["status"] == "demo":
+        run(update(outbox).where(outbox.c.id == outbox_id).values(status="simulated", attempts=1, sent_at=now()))
+        return True
     token = unseal(ch["token_enc"]) if ch and ch["status"] == "active" else None
     attempts = (item["attempts"] or 0) + 1
     if not token:
@@ -263,8 +270,8 @@ def send_to_lead(lead: dict, text: str, purpose: str, template_param: str | None
     if not can_contact(lead):
         return "opted_out"
     kind = lead.get("contact_kind")
-    ch = one(select(channels).where(and_(channels.c.id == lead.get("contact_channel_id"), channels.c.status == "active"))) \
-        if lead.get("contact_channel_id") else None
+    ch = one(select(channels).where(and_(channels.c.id == lead.get("contact_channel_id"),
+                                         channels.c.status.in_(["active", "demo"])))) if lead.get("contact_channel_id") else None
     if not ch or not lead.get("contact_id"):
         return "no_channel"
     if in_window(lead):

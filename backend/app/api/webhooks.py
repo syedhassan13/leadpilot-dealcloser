@@ -127,6 +127,8 @@ def run_job(job: tuple):
     try:
         if kind == "status":
             return record_status(payload)
+        if not tenants.allows_channel(tenants.get(ch["business_id"]), "leadgen" if kind == "leadgen" else kind):
+            return channels.seen(ch, "Not included in the agency's plan")      # downgraded: stop answering here
         channels.seen(ch)
         if kind == "leadgen":
             return process_leadgen(ch, payload)
@@ -273,6 +275,12 @@ def process_leadgen(ch: dict, v: dict):
         return
     data = channels.graph("GET", str(v["leadgen_id"]), token,
                           params={"fields": "field_data,created_time,ad_id,ad_name,campaign_name,form_id,platform"})
+    create_form_lead(ch, dealer, str(v["leadgen_id"]), data, v.get("form_id"))
+
+
+def create_form_lead(ch: dict, dealer: dict, leadgen_id: str, data: dict, form_id=None, demo: bool = False) -> str:
+    """A lead-form submission (from Meta, or from the demo simulator) becomes a lead + first WhatsApp contact."""
+    v = {"leadgen_id": leadgen_id, "form_id": form_id}
     f = {x.get("name"): str((x.get("values") or [""])[0])[:300] for x in data.get("field_data") or []}
     name = (f.get("full_name") or " ".join(p for p in (f.get("first_name"), f.get("last_name")) if p)).strip()[:80] or None
     from app.identity import normalize_phone
@@ -287,11 +295,12 @@ def process_leadgen(ch: dict, v: dict):
                                  "utm_medium": "lead_form", **({"utm_campaign": camp} if camp else {})}, default="facebook")
     log_event("lead_form_received", "", {"business": dealer["id"]})
     # First contact on WhatsApp within a minute, with the agency's approved template (business-initiated).
-    wa = channels.whatsapp_of(dealer["id"])
+    wa = channels.whatsapp_of(dealer["id"], demo=demo)
     tpl = channels.settings_of(wa).get("first_template") if wa else None
     to = channels.wa_number(phone)
-    if wa and tpl and to:
+    if wa and tpl and to and tenants.allows_channel(dealer, "whatsapp"):
         upsert_lead(uid, contact_kind="whatsapp", contact_channel_id=wa["id"], contact_id=to)
         channels.queue(wa, to, "template", {"name": tpl, "lang": channels.settings_of(wa).get("template_lang", "en"),
                                             "params": [(name or "there").split(" ")[0], dealer["name"]]},
-                       uid, "first_contact", send_now=False)
+                       uid, "first_contact", send_now=demo)
+    return uid

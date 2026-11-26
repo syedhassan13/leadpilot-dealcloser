@@ -387,7 +387,7 @@ def reply_to_lead(user_id: str, body: ReplyIn, p: Principal = Depends(principal)
         raise HTTPException(409, "More than 24 hours since the buyer's last message. Meta only allows approved templates "
                                  "now: approve a follow-up instead, or call them.")
     ch = one(select(channels.channels).where(channels.channels.c.id == c["contact_channel_id"]))
-    if not ch or ch["status"] != "active":
+    if not ch or ch["status"] not in ("active", "demo"):
         raise HTTPException(409, "That channel is disconnected.")
     text = body.text.strip()
     ok = channels.deliver(channels.queue(ch, c["contact_id"], "text", {"text": text}, c["user_id"], "manual", send_now=False))
@@ -554,6 +554,10 @@ def team_list(p: Principal = Depends(manager)):
 def team_add(body: MemberIn, p: Principal = Depends(manager)):
     if one(select(func.count().label("n")).where(members.c.business_id == p.business))["n"] >= 50:
         raise HTTPException(422, "An agency can have at most 50 team members.")
+    seats = tenants.plan_of(tenants.get(p.business) or {}).get("seats")
+    active = one(select(func.count().label("n")).where(members.c.business_id == p.business, members.c.active == 1))["n"]
+    if seats is not None and active >= seats:              # plan limit, enforced on the server (audit 3.4)
+        raise HTTPException(403, f"Your plan includes {seats} team logins. Remove someone or upgrade to add more.")
     key = team.new_key()
     mid = team.new_id()
     run(insert(members).values(id=mid, business_id=p.business, name=body.name.strip(), phone=(body.phone or "").strip() or None,
@@ -748,7 +752,9 @@ def own_channel(channel_id: str, p: Principal) -> dict:
 
 @router.get("/admin/channels")
 def list_channels(p: Principal = Depends(manager)):
+    d = tenants.get(p.business) or {}
     return {"enabled": channels.enabled(), "webhook_url": f"{config.PUBLIC_API_URL}/webhooks/meta",
+            "plan": tenants.plan_of(d)["name"], "included": tenants.plan_of(d).get("channels", []),
             "channels": [channels.public(c) for c in channels.for_business(p.business)],
             "outbox": rows(select(channels.outbox.c.id, channels.outbox.c.purpose, channels.outbox.c.status,
                                   channels.outbox.c.error, channels.outbox.c.created_at)
@@ -759,6 +765,7 @@ def list_channels(p: Principal = Depends(manager)):
 def connect_channel(body: ChannelIn, p: Principal = Depends(manager)):
     """Connect a WhatsApp number / Facebook page / Instagram account with the agency's own Meta token.
     The token is checked with Meta, stored encrypted, and never shown again."""
+    tenants.require_channel(tenants.get(p.business), body.kind)
     if not channels.enabled():
         raise HTTPException(503, "Channels aren't switched on for this server yet (META_APP_SECRET and CHANNEL_KEY).")
     taken = one(select(channels.channels).where(and_(channels.channels.c.kind == body.kind,
@@ -794,6 +801,29 @@ def connect_channel(body: ChannelIn, p: Principal = Depends(manager)):
     return channels.public(own_channel(cid, p))
 
 
+class DemoIn(BaseModel):
+    kind: Literal["whatsapp", "messenger", "instagram", "leadgen"]
+
+
+@router.post("/admin/channels/demo", status_code=201)
+def create_demo_channel(body: DemoIn, p: Principal = Depends(manager)):
+    """A demo channel runs the real pipeline (AI, leads, matching, takeover, alerts) but records outgoing messages
+    instead of sending them, so the product can be shown before the agency's Meta account is connected."""
+    tenants.require_channel(tenants.get(p.business), body.kind)
+    existing = [c for c in channels.for_business(p.business, body.kind) if c["status"] == "demo"]
+    if existing:
+        return channels.public(existing[0])
+    import secrets
+    cid = "c_" + secrets.token_hex(8)
+    run(insert(channels.channels).values(id=cid, business_id=p.business, kind=body.kind, external_id="demo-" + cid[2:],
+                                         display=f"Demo {tenants.CHANNEL_NAMES[body.kind]}", status="demo",
+                                         settings={"template_lang": "en", "first_template": "demo_first_contact",
+                                                   "followup_template": "demo_followup"} if body.kind == "whatsapp" else {},
+                                         created_at=now()))
+    log_event("channel_demo_created", p.member_id or "", {"business": p.business, "kind": body.kind})
+    return channels.public(own_channel(cid, p))
+
+
 @router.post("/admin/channels/{channel_id}")
 def update_channel(channel_id: str, body: ChannelPatch, p: Principal = Depends(manager)):
     ch = own_channel(channel_id, p)
@@ -808,6 +838,55 @@ def update_channel(channel_id: str, body: ChannelPatch, p: Principal = Depends(m
         run(update(channels.channels).where(channels.channels.c.id == channel_id).values(**changes))
         log_event("channel_updated", p.member_id or "", {"business": p.business, "fields": sorted(changes)})
     return channels.public(own_channel(channel_id, p))
+
+
+class SimulateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    phone: str | None = Field(default=None, pattern=r"^[0-9+()\- ]{7,30}$")
+    text: str = Field(default="", max_length=1000)
+    budget: str | None = Field(default=None, max_length=60)
+
+
+@router.post("/admin/channels/{channel_id}/simulate")
+def simulate(channel_id: str, body: SimulateIn, p: Principal = Depends(manager)):
+    """Play the buyer on a demo channel. Uses the real AI (counted against the plan like any conversation)."""
+    ch = own_channel(channel_id, p)
+    if ch["status"] != "demo":
+        raise HTTPException(409, "Only demo channels can be simulated.")
+    enforce("simulate", p.business, 60, 3600)
+    from app.api import webhooks as wh
+    phone = identity.normalize_phone(body.phone) if body.phone else None
+    dealer = tenants.get(p.business)
+    if ch["kind"] == "leadgen":
+        if not phone:
+            raise HTTPException(422, "A lead form needs a phone number.")
+        fields = [{"name": "full_name", "values": [body.name]}, {"name": "phone_number", "values": [body.phone]}]
+        if body.budget:
+            fields.append({"name": "budget", "values": [body.budget]})
+        import secrets
+        uid = wh.create_form_lead(ch, dealer, str(secrets.randbelow(10**12)), {"field_data": fields, "campaign_name": "Demo lead form"},
+                                  demo=True)
+        return {"lead_id": uid, "messages": sent_messages(uid)}
+    if not body.text.strip():
+        raise HTTPException(422, "Type the buyer's message.")
+    if ch["kind"] == "whatsapp":
+        if not phone:
+            raise HTTPException(422, "WhatsApp buyers have a phone number: add one.")
+        contact = channels.wa_number(phone)
+    else:
+        contact = "demo" + hashlib.sha256(body.name.lower().encode()).hexdigest()[:12]
+    wh.converse(ch, ch["kind"], contact, body.text, name=body.name, phone=phone)
+    channels.flush()
+    uid = wh.uid_for(ch["kind"], p.business, contact)
+    return {"lead_id": (get_lead(uid) or {}).get("merged_into") or uid, "messages": sent_messages(uid)}
+
+
+def sent_messages(uid: str) -> list[dict]:
+    out = rows(select(channels.outbox.c.kind, channels.outbox.c.payload, channels.outbox.c.purpose, channels.outbox.c.status)
+               .where(channels.outbox.c.lead_id == uid).order_by(channels.outbox.c.id))
+    return [{"kind": o["kind"], "purpose": o["purpose"], "status": o["status"],
+             "text": o["payload"].get("text") if o["kind"] == "text" else
+             f"[template {o['payload'].get('name')}: {', '.join(map(str, o['payload'].get('params', [])))}]"} for o in out]
 
 
 @router.post("/cron/outbox")

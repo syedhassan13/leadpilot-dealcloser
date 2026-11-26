@@ -62,6 +62,42 @@ def overview(_: str = Depends(super_admin)):
             "margin_usd": round(revenue - cost, 2), "plans": config.PLANS, "chat_requires_key": config.CHAT_REQUIRE_KEY}
 
 
+# ───────────────────────── system readiness (go-live checklist) ─────────────────────────
+
+@router.get("/system")
+def system(_: str = Depends(super_admin)):
+    """What is configured on this server. Never returns a secret: only whether it is set."""
+    import os
+    from datetime import timedelta
+
+    from app import channels
+    from app.db import chat_log, is_postgres
+    from app.services import ERROR_REPLY
+    since = now() - timedelta(hours=24)
+    turns = one(select(func.count().label("n")).where(chat_log.c.created_at >= since))["n"]
+    errors = one(select(func.count().label("n")).where(chat_log.c.created_at >= since, chat_log.c.reply == ERROR_REPLY))["n"]
+    key = os.getenv("ANTHROPIC_API_KEY", "")
+    items = [
+        {"id": "ai_key", "label": "AI key (ANTHROPIC_API_KEY)", "ok": bool(key) and errors < max(3, turns // 10),
+         "detail": ("set" if key else "missing") + f" · {turns} AI replies and {errors} errors in the last 24 h",
+         "how": "Render → Environment → ANTHROPIC_API_KEY = your own key (set a monthly spend limit in the Anthropic console). Nothing else changes."},
+        {"id": "model", "label": "Model", "ok": True, "detail": config.MODEL, "how": "MODEL env var (optional)."},
+        {"id": "database", "label": "Database", "ok": is_postgres(), "detail": "Postgres" if is_postgres() else "SQLite (development)",
+         "how": "DATABASE_URL (Supabase)."},
+        {"id": "lockdown", "label": "Every chat needs an agency key", "ok": config.CHAT_REQUIRE_KEY,
+         "detail": "on" if config.CHAT_REQUIRE_KEY else "off (open /chat for the assignment's grader)",
+         "how": "After grading: CHAT_REQUIRE_KEY=true."},
+        {"id": "meta", "label": "WhatsApp / Messenger / Instagram / lead forms", "ok": channels.enabled(),
+         "detail": "live" if channels.enabled() else "demo channels only (no Meta app secret yet)",
+         "how": "META_APP_SECRET from your Meta app; CHANNEL_KEY and META_VERIFY_TOKEN are already set. Then agencies connect in Console → Channels."},
+        {"id": "cron", "label": "Scheduled jobs (follow-ups, retries, keep-alive)", "ok": bool(config.CRON_SECRET),
+         "detail": "set" if config.CRON_SECRET else "missing", "how": "CRON_SECRET on Render and in GitHub secrets."},
+        {"id": "hosting", "label": "Always-on hosting", "ok": None, "detail": "can't be detected from inside the app",
+         "how": "Render Starter plan (about $7/month) before real WhatsApp traffic: the free plan sleeps."},
+    ]
+    return {"items": items, "plans": config.PLANS, "public_api": config.PUBLIC_API_URL, "site": config.SITE_URL}
+
+
 # ───────────────────────── create / update ─────────────────────────
 
 class DealerIn(BaseModel):

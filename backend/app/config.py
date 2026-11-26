@@ -63,12 +63,20 @@ GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v23.0")
 CHAT_REQUIRE_KEY = os.getenv("CHAT_REQUIRE_KEY", "false").lower() in ("1", "true", "yes")
 
 # Plans: monthly buyer-conversation allowance (None = no limit, for internal accounts) and features.
+# Every plan includes the website chat, the agency page, the call-back form, tracked links/QR codes and source
+# tracking. "channels" are the Meta channels on top; "seats" are personal team logins (None = unlimited).
+ALL_CHANNELS = ["whatsapp", "leadgen", "messenger", "instagram"]
 PLANS = {
-    "pilot":    {"name": "Pilot",    "price_usd": 0,   "conversations": 300,  "followups": True,  "websites": 1},
-    "starter":  {"name": "Starter",  "price_usd": 20,  "conversations": 500,  "followups": False, "websites": 1},
-    "growth":   {"name": "Growth",   "price_usd": 50,  "conversations": 2000, "followups": True,  "websites": 3},
-    "scale":    {"name": "Scale",    "price_usd": 100, "conversations": 6000, "followups": True,  "websites": None},
-    "internal": {"name": "Internal", "price_usd": 0,   "conversations": None, "followups": True,  "websites": None},
+    "pilot":    {"name": "Pilot",    "price_usd": 0,   "conversations": 300,  "followups": True,  "websites": 1,
+                 "channels": ALL_CHANNELS, "seats": 5},
+    "starter":  {"name": "Starter",  "price_usd": 20,  "conversations": 500,  "followups": False, "websites": 1,
+                 "channels": [], "seats": 2},
+    "growth":   {"name": "Growth",   "price_usd": 50,  "conversations": 2000, "followups": True,  "websites": 3,
+                 "channels": ["whatsapp", "leadgen"], "seats": 5},
+    "scale":    {"name": "Scale",    "price_usd": 100, "conversations": 6000, "followups": True,  "websites": None,
+                 "channels": ALL_CHANNELS, "seats": None},
+    "internal": {"name": "Internal", "price_usd": 0,   "conversations": None, "followups": True,  "websites": None,
+                 "channels": ALL_CHANNELS, "seats": None},
 }
 ALERT_THRESHOLDS = (80, 100)   # % of the monthly allowance (plan + extra credits) that raises an alert
 

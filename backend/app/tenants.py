@@ -180,6 +180,7 @@ def summary(dealer: dict) -> dict:
             "ai_turns": u["ai_turns"], "tokens_in": u["tokens_in"], "tokens_out": u["tokens_out"],
             "cost_usd": round(u["tokens_in"] / 1e6 * config.PRICE_IN_PER_M + u["tokens_out"] / 1e6 * config.PRICE_OUT_PER_M, 4),
             "status": dealer.get("status") or "active", "followups": p["followups"], "websites": p["websites"],
+            "channels": p.get("channels", []), "seats": p.get("seats"),
             "month": u["month"]}
 
 
@@ -278,3 +279,18 @@ def add_credits(dealer_id: str, delta: int, reason: str):
 def page_on(dealer: dict) -> bool:
     """The hosted agency page is on unless a manager turned it off (NULL on agencies created before the setting)."""
     return dealer.get("page_enabled") != 0
+
+
+CHANNEL_NAMES = {"whatsapp": "WhatsApp", "leadgen": "Facebook & Instagram lead forms", "messenger": "Messenger",
+                 "instagram": "Instagram DMs"}
+
+
+def allows_channel(dealer: dict | None, kind: str) -> bool:
+    """Is this Meta channel part of the agency's plan? (Checked when connecting AND on every incoming message.)"""
+    return bool(dealer) and kind in plan_of(dealer).get("channels", [])
+
+
+def require_channel(dealer: dict, kind: str):
+    if not allows_channel(dealer, kind):
+        raise HTTPException(403, f"{CHANNEL_NAMES.get(kind, kind)} isn't included in the {plan_of(dealer)['name']} plan. "
+                                 "Upgrade to use it.")
