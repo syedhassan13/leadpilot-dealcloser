@@ -829,7 +829,8 @@ def update_channel(channel_id: str, body: ChannelPatch, p: Principal = Depends(m
     ch = own_channel(channel_id, p)
     changes = {}
     if body.status:
-        changes["status"] = body.status
+        # a channel without a Meta token can only ever be a demo (or off): it can't be switched to "live"
+        changes["status"] = body.status if ch.get("token_enc") else ("demo" if body.status == "active" else "disabled")
     if body.settings is not None:
         changes["settings"] = {**channels.settings_of(ch), **body.settings.model_dump(exclude_unset=True)}
     if body.token:

@@ -105,6 +105,9 @@ def test_demo_whatsapp_runs_the_real_pipeline(client):
     assert rows(select(outbox).where(outbox.c.lead_id == lead["user_id"]))[-1]["status"] == "simulated"
     client.post(f"/admin/channels/{ch['id']}/simulate", headers=a["mgr"], json={"name": "Ali Raza", "phone": "0300 1234567", "text": "ok"})
     assert turns == ["Do you have 10 marla houses in DHA?"]          # taken over: the AI stayed quiet
+    # a demo channel can be turned off and on, but never becomes "live" without a Meta token
+    assert client.post(f"/admin/channels/{ch['id']}", headers=a["mgr"], json={"status": "disabled"}).json()["status"] == "disabled"
+    assert client.post(f"/admin/channels/{ch['id']}", headers=a["mgr"], json={"status": "active"}).json()["status"] == "demo"
     # only demo channels can be simulated, and only by that agency's manager
     other = agency(client)
     assert client.post(f"/admin/channels/{ch['id']}/simulate", headers=other["mgr"], json={"name": "X Y", "text": "hi"}).status_code == 404
