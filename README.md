@@ -361,6 +361,40 @@ codes. Managers can turn it off.
 calls it with no key. Set `CHAT_REQUIRE_KEY=true` on Render after grading. Every chat then needs a valid
 `X-Widget-Key` and is billed to that dealer.
 
+## Going live (phase 3): configuration only
+
+Everything in phases 1 and 2 is built and running. Going live with real customers changes **settings, not code**.
+The owner console's **System & go-live** page shows each item below as ready or to do, and never shows secret values.
+
+| Step | Where | What changes |
+|---|---|---|
+| Your own AI key | Render → Environment → `ANTHROPIC_API_KEY` | Replaces the workshop key. Nothing else changes. Plan limits, the global daily cap (`AI_TURNS_PER_DAY`) and per-agency usage keep working. Set a monthly spend limit in the Anthropic console. |
+| Lock down `/chat` | `CHAT_REQUIRE_KEY=true` | After grading. Every chat must then carry an agency's widget key and is billed to that agency. |
+| Always-on hosting | Render → Starter plan | The free plan sleeps; WhatsApp needs a server that answers Meta at once. |
+| Meta channels | `META_APP_SECRET` (plus `CHANNEL_KEY` and `META_VERIFY_TOKEN`, already set) | Switches live WhatsApp, Messenger, Instagram and lead forms on. Agencies then connect their accounts in Console → Channels; their demo channels keep working beside the live ones. |
+| An agency | Owner console → Dealers → New dealer | No code: name, plan, branding, listings (CSV), policies; the manager adds the team. |
+
+**What each plan includes (enforced on the server):**
+
+| Plan | Conversations / month | Meta channels | Team logins |
+|---|---|---|---|
+| Pilot (free) | 300 | all | 5 |
+| Starter ($20) | 500 | none (website chat, agency page, QR codes, links) | 2 |
+| Growth ($50) | 2,000 | WhatsApp, lead forms | 5 |
+| Scale ($100) | 6,000 | all | unlimited |
+
+Enforcement:
+- Connecting a channel, inviting a team member and every incoming message are all checked against the plan.
+- An agency that downgrades stops being answered on the channels it lost.
+- A conversation on any channel counts once against the monthly allowance, then capture-only applies.
+
+**Demo channels (show the product before Meta is connected).**
+- In Console → Channels a manager creates a demo WhatsApp, Messenger, Instagram or lead-form channel and plays the
+  buyer in a phone-style simulator.
+- It runs the real pipeline: AI, lead matching, plan limits, takeover, first-contact templates, notifications.
+- Outgoing messages are recorded instead of sent, and a demo channel can never be switched to live without a real
+  Meta token.
+
 ## Benchmark (live deployment)
 
 | Metric | Result |
