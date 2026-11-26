@@ -294,3 +294,24 @@ td .select { min-width: 140px; }
 .channel-head .sub { display: block; font: 500 13px var(--mono); color: var(--muted); }
 .err { color: var(--danger); }
 .channel details summary { cursor: pointer; color: var(--muted); }
+
+/* ───────── demo simulator, go-live checklist ───────── */
+.tag.demo { background: var(--warm-bg); color: var(--warm); }
+.sim { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: start; }
+.sim-phone { border: 1px solid var(--rule-strong); border-radius: 14px; overflow: hidden; background: var(--paper-2); }
+.sim-head { padding: 8px 12px; font: 600 12px var(--mono); background: #0b3d2e; color: #e8f5ee; }
+.sim-log { display: flex; flex-direction: column; gap: 8px; padding: 12px; height: 260px; overflow-y: auto; }
+.sim-msg { max-width: 88%; padding: 8px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.45; }
+.sim-msg.in { align-self: flex-start; background: var(--surface); border: 1px solid var(--rule); }
+.sim-msg.out { align-self: flex-end; background: #d9fdd3; color: #15140f; }
+.sim-msg.out .mono { display: block; margin-top: 4px; font-size: 10px; opacity: .6; text-transform: uppercase; }
+.sim-msg.note { align-self: center; font-size: 12px; color: var(--muted); }
+.checklist { list-style: none; margin: 0; padding: 0; }
+.checklist li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--rule); }
+.checklist strong { display: block; }
+.checklist p { margin: 4px 0 0; }
+.chk { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 12px var(--mono); }
+.chk.ok { background: var(--ok-bg); color: var(--ok); }
+.chk.todo { background: var(--warm-bg); color: var(--warm); }
+.chk.info { background: var(--paper-3); color: var(--ink-2); }
+@media (max-width: 720px) { .sim { grid-template-columns: 1fr; } }

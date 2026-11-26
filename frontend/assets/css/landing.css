@@ -205,3 +205,36 @@ code { font: 500 .88em var(--mono); background: var(--paper-2); padding: 1px 5px
   .mk-label { font-size: 12.5px; }
   .scale-window span { display: none; }
 }
+
+/* ───────── channels section ───────── */
+.channel-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
+.channel-grid li { padding: 28px; background: var(--surface); border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); display: grid; gap: 8px; align-content: start; }
+.channel-grid li:nth-child(3n) { border-right: 0; }
+.channel-grid li:nth-last-child(-n+3) { border-bottom: 0; }
+.channel-grid li.hl { background: var(--paper); }
+.channel-grid .h3 { margin: 4px 0 0; font-size: 21px; }
+.channel-grid p { margin: 0; color: var(--ink-2); }
+.ch-tag { justify-self: start; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border: 1px solid var(--rule-strong); }
+.channel-grid li.hl .ch-tag { background: var(--signal); border-color: var(--signal); color: #15140f; }
+.team-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-top: 36px; }
+.team-strip div { display: grid; gap: 4px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.team-strip span { color: var(--ink-2); font-size: 15px; }
+.golive { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--rule-strong); }
+.golive li { display: grid; gap: 4px; padding: 18px 24px 0 0; }
+.golive li + li { padding-left: 24px; border-left: 1px solid var(--rule-strong); }
+.golive .mono { color: var(--signal-text); font-size: 12px; letter-spacing: .06em; }
+.golive li > span:last-child { color: var(--ink-2); font-size: 15px; }
+@media (max-width: 980px) {
+  .channel-grid { grid-template-columns: 1fr 1fr; }
+  .channel-grid li:nth-child(3n) { border-right: 1px solid var(--ink); }
+  .channel-grid li:nth-child(2n) { border-right: 0; }
+  .channel-grid li:nth-last-child(-n+3) { border-bottom: 1px solid var(--ink); }
+  .channel-grid li:nth-last-child(-n+2) { border-bottom: 0; }
+  .team-strip { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 680px) {
+  .channel-grid, .team-strip, .golive { grid-template-columns: 1fr; }
+  .channel-grid li { border-right: 0 !important; border-bottom: 1px solid var(--ink) !important; }
+  .channel-grid li:last-child { border-bottom: 0 !important; }
+  .golive li + li { padding-left: 0; border-left: 0; }
+}

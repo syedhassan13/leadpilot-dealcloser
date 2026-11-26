@@ -64,6 +64,7 @@ async function boot() {
   $("#nav-team").hidden = !isManager();
   $("#nav-links").hidden = !isManager();
   $("#nav-channels").hidden = !isManager();
+  $("#nav-system").hidden = !isOwner();
   meAt = Date.now(); teamCache = null;
   refreshBell();
   $("#login-view").hidden = true; $("#app-view").hidden = false;
@@ -72,11 +73,11 @@ async function boot() {
 }
 
 // ───────── routing ─────────
-const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage, team: teamView, links: linksView, channels: channelsView,
+const VIEWS = { overview, pipeline, leads, lead: leadDetail, bookings, followups, settings, pilots, usage, team: teamView, links: linksView, channels: channelsView, system: systemView,
   dealers: dealersView, dealer: dealerDetail, newdealer: newDealer };
 const TITLES = { overview: "Overview", pipeline: "Pipeline", leads: "Leads", lead: "Lead", bookings: "Bookings",
   followups: "Follow-ups", settings: "Install & settings", pilots: "Pilot requests", usage: "Plan & usage",
-  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer", team: "Team", links: "Links & QR codes", channels: "Channels" };
+  dealers: "Dealers", dealer: "Dealer", newdealer: "New dealer", team: "Team", links: "Links & QR codes", channels: "Channels", system: "System & go-live" };
 function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, "").split("?");
   const [name, id] = path.split("/");
@@ -1007,12 +1008,12 @@ async function channelsView(view, r) {
   const tplField = (c, key, label, hint) => `<div class="field"><label for="${key}-${esc(c.id)}">${label}</label>
     <input class="input mono" id="${key}-${esc(c.id)}" name="${key}" value="${esc((c.settings || {})[key] || "")}" maxlength="100" pattern="[a-z0-9_]{1,100}" placeholder="template_name"><span class="hint">${hint}</span></div>`;
   view.innerHTML = `
-    ${x.enabled ? "" : `<div class="plan-banner" role="status"><strong>Channels aren't switched on for this server yet.</strong> The LeadPilot team needs to add the Meta app secret and encryption key. You can still read how it works below.</div>`}
+    ${x.enabled ? "" : `<div class="plan-banner" role="status"><strong>Live Meta channels aren't switched on yet.</strong> Demo channels work now: show a client the whole flow below. Live WhatsApp, Messenger and Instagram start once the LeadPilot team adds the Meta app secret.</div>`}
     <div class="grid-2">
       <section class="panel"><div class="panel-head"><h2>Connected</h2><span class="muted">${x.channels.filter((c) => c.status === "active").length} active</span></div>
         ${x.channels.length ? x.channels.map((c) => `<article class="channel ${c.status === "active" ? "" : "off"}">
           <div class="channel-head"><div><strong>${esc(KIND_LABEL[c.kind])}</strong><span class="sub">${esc(c.display || c.external_id)}</span></div>
-            <div class="acts-row">${statusTag(c.status)}<button class="btn btn-sm btn-ghost" data-toggle="${esc(c.id)}" data-to="${c.status === "active" ? "disabled" : "active"}">${c.status === "active" ? "Disconnect" : "Reconnect"}</button></div></div>
+            <div class="acts-row">${statusTag(c.status)}<button class="btn btn-sm btn-ghost" data-toggle="${esc(c.id)}" data-to="${c.status === "disabled" ? "active" : "disabled"}">${c.status === "demo" ? "Turn off" : c.status === "active" ? "Disconnect" : c.has_token ? "Reconnect" : "Turn on"}</button></div></div>
           <p class="small muted">${c.last_event_at ? `Last message ${when(c.last_event_at)}` : "No messages yet"}${c.last_error ? ` · <span class="err">Last error: ${esc(c.last_error)}</span>` : ""}</p>
           ${c.kind === "whatsapp" ? `<form class="form-grid tpl-form" data-id="${esc(c.id)}">
             ${tplField(c, "first_template", "First message to form leads", "Sent within a minute to buyers from Facebook/Instagram lead forms. Two variables: first name, agency name.")}
@@ -1021,12 +1022,17 @@ async function channelsView(view, r) {
             <div class="field"><label for="lang-${esc(c.id)}">Template language</label><input class="input mono" id="lang-${esc(c.id)}" name="template_lang" value="${esc((c.settings || {}).template_lang || "en")}" maxlength="5" pattern="[a-z]{2}(_[A-Z]{2})?"></div>
             <div class="full"><button class="btn btn-sm btn-primary" type="submit">Save templates</button> <span class="small muted">Create and get templates approved in WhatsApp Manager first. Leave empty to switch that message off.</span></div>
           </form>` : ""}
-          <details class="small"><summary>Replace access token</summary><form class="acts-row mt token-form" data-id="${esc(c.id)}">
+          ${c.status === "demo" ? simulator(c) : `<details class="small"><summary>Replace access token</summary><form class="acts-row mt token-form" data-id="${esc(c.id)}">
             <input class="input mono" type="password" name="token" minlength="20" maxlength="1000" required autocomplete="off" placeholder="New access token" aria-label="New access token">
-            <button class="btn btn-sm" type="submit">Replace</button></form></details>
+            <button class="btn btn-sm" type="submit">Replace</button></form></details>`}
         </article>`).join("") : empty("Nothing connected yet.", "Connect WhatsApp first: most buyers in Pakistan message there.")}
       </section>
       <div class="stack gap-20">
+        <section class="panel"><div class="panel-head"><h2>Show it without Meta</h2><span class="muted">${esc(x.plan)} plan</span></div><div class="panel-body small">
+          ${x.included.length ? `<p>Demo channels run the real assistant, lead matching, plan limits and takeover, but record messages instead of sending them. Use them to show a client the whole flow before their Meta account is connected.</p>
+            <div class="acts-row">${x.included.filter((k) => !x.channels.some((c) => c.kind === k && c.status === "demo")).map((k) => `<button class="btn btn-sm" data-demo="${k}">Demo ${esc(KIND_LABEL[k])}</button>`).join("") || '<span class="muted">All demo channels are set up (left).</span>'}</div>`
+            : `<p>The ${esc(x.plan)} plan includes the website chat, agency page and QR codes. WhatsApp, lead forms, Messenger and Instagram come with Growth and Scale.</p>`}
+        </div></section>
         <section class="panel"><div class="panel-head"><h2>Connect a channel</h2></div><div class="panel-body">
           <form id="connect" class="form-grid" autocomplete="off">
             <div class="field full"><label for="cn-kind">Channel</label><select class="select" id="cn-kind" name="kind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}">${esc(l)}${has(k) ? " (connected)" : ""}</option>`).join("")}</select></div>
@@ -1062,6 +1068,13 @@ async function channelsView(view, r) {
     finally { $("#cn-token") && ($("#cn-token").value = ""); }
   }, { signal: r.signal });
   view.addEventListener("submit", async (e) => {
+    const sf = e.target.closest(".sim-form");
+    if (sf) {
+      e.preventDefault();
+      if (!sf.checkValidity()) { sf.reportValidity(); return; }
+      try { await runSimulator(sf); } catch (ex) { toast(ex.message, { error: true }); }
+      return;
+    }
     const tf = e.target.closest(".tpl-form"), kf = e.target.closest(".token-form");
     if (!tf && !kf) return;
     e.preventDefault();
@@ -1081,6 +1094,12 @@ async function channelsView(view, r) {
   }, { signal: r.signal });
   view.addEventListener("click", async (e) => {
     copyHandler(e);
+    const demo = e.target.closest("[data-demo]");
+    if (demo) {
+      try { await busy(demo, "Creating…", () => api("/admin/channels/demo", { method: "POST", body: { kind: demo.dataset.demo } })); toast("Demo channel ready"); route(true); }
+      catch (ex) { toast(ex.message, { error: true }); }
+      return;
+    }
     const t = e.target.closest("[data-toggle]"); if (!t) return;
     if (t.dataset.to === "disabled" && !confirm("Disconnect this channel? Buyers' messages there won't be answered until you reconnect.")) return;
     try { await api(`/admin/channels/${t.dataset.toggle}`, { method: "POST", body: { status: t.dataset.to } }); route(true); }
@@ -1118,6 +1137,56 @@ function wireContact(l, r) {
       toast(res.sent ? "Sent" : "Queued: Meta had a temporary problem, it will retry"); route(true); }
     catch (ex) { toast(ex.message, { error: true }); }
   }, { signal: r.signal });
+}
+
+// ───────── demo channels: play the buyer (no Meta account needed) ─────────
+function simulator(c) {
+  const form = c.kind === "leadgen"
+    ? `<div class="field"><label>Buyer name</label><input class="input" name="name" required minlength="2" maxlength="80" value="Hamza Ali"></div>
+       <div class="field"><label>Phone</label><input class="input mono" name="phone" required pattern="[0-9+ \\(\\)\\-]{7,30}" value="0300 1234567"></div>
+       <div class="field full"><label>Budget (form answer)</label><input class="input" name="budget" maxlength="60" value="2 crore"></div>
+       <div class="full"><button class="btn btn-primary btn-sm" type="submit">Submit a demo lead form</button></div>`
+    : `<div class="field"><label>Buyer name</label><input class="input" name="name" required minlength="2" maxlength="80" value="Ali Raza"></div>
+       ${c.kind === "whatsapp" ? `<div class="field"><label>Buyer's WhatsApp</label><input class="input mono" name="phone" required pattern="[0-9+ \\(\\)\\-]{7,30}" value="0300 1234567"></div>` : "<div></div>"}
+       <div class="field full"><label>Buyer's message</label><textarea class="textarea" name="text" rows="2" required maxlength="1000">Salam, do you have a 10 marla house in DHA under 5 crore?</textarea></div>
+       <div class="full"><button class="btn btn-primary btn-sm" type="submit">Send as the buyer</button> <span class="small muted">Uses the real assistant; counts as a conversation.</span></div>`;
+  return `<div class="sim"><div class="sim-phone"><div class="sim-head">${esc(KIND_LABEL[c.kind])} · demo</div><div class="sim-log" id="sim-${esc(c.id)}">
+      <p class="small muted">Messages appear here. Nothing is sent to Meta.</p></div></div>
+    <form class="form-grid sim-form" data-id="${esc(c.id)}" data-kind="${esc(c.kind)}">${form}</form></div>`;
+}
+async function runSimulator(f) {
+  const log = $(`#sim-${f.dataset.id}`);
+  const body = { name: val(f, "name") };
+  if (f.elements.phone) body.phone = val(f, "phone");
+  if (f.elements.text) body.text = val(f, "text");
+  if (f.elements.budget) body.budget = orNull(val(f, "budget"));
+  if (log.querySelector(".muted")) log.innerHTML = "";
+  if (body.text) log.insertAdjacentHTML("beforeend", `<div class="sim-msg in">${esc(body.text)}</div>`);
+  else log.insertAdjacentHTML("beforeend", `<div class="sim-msg note">Lead form: ${esc(body.name)} · ${esc(body.phone)}${body.budget ? " · " + esc(body.budget) : ""}</div>`);
+  const r = await busy($("button[type=submit]", f), "Working…", () => api(`/admin/channels/${f.dataset.id}/simulate`, { method: "POST", body, timeout: 120000 }));
+  const shown = Number(log.dataset.shown || 0);
+  r.messages.slice(shown).forEach((m) => log.insertAdjacentHTML("beforeend", `<div class="sim-msg out">${md(m.text)}<span class="mono">${esc(m.purpose.replace("_", " "))}</span></div>`));
+  log.dataset.shown = r.messages.length;
+  log.insertAdjacentHTML("beforeend", `<a class="small" href="#/leads/${encodeURIComponent(r.lead_id)}">Open this lead in the console →</a>`);
+  log.scrollTop = log.scrollHeight;
+  if (f.elements.text) f.elements.text.value = "";
+}
+
+// ───────── system: go-live checklist (LeadPilot owner) ─────────
+async function systemView(view, r) {
+  if (!isOwner()) { view.innerHTML = empty("Not available.", "Only the LeadPilot team can see this."); return; }
+  const x = await api("/admin/owner/system");
+  if (r.stale()) return;
+  const mark = (ok) => ok === true ? `<span class="chk ok" aria-label="ready">✓</span>` : ok === false ? `<span class="chk todo" aria-label="to do">!</span>` : `<span class="chk info" aria-label="check">?</span>`;
+  view.innerHTML = `
+    <section class="panel"><div class="panel-head"><h2>Go-live checklist</h2><span class="muted">${x.items.filter((i) => i.ok === true).length} of ${x.items.length} ready</span></div>
+      <ul class="checklist">${x.items.map((i) => `<li>${mark(i.ok)}<div><strong>${esc(i.label)}</strong><span class="mono small">${esc(i.detail)}</span><p class="small muted">${esc(i.how)}</p></div></li>`).join("")}</ul></section>
+    <section class="panel mt"><div class="panel-head"><h2>What each plan includes</h2><span class="muted">enforced on the server</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Plan</th><th>Price</th><th>Conversations</th><th>Meta channels</th><th>Team logins</th><th>Follow-ups</th></tr></thead><tbody>
+      ${Object.values(x.plans).map((pl) => `<tr><td><strong>${esc(pl.name)}</strong></td><td class="num">${pl.price_usd ? "$" + pl.price_usd : "–"}</td>
+        <td class="num">${pl.conversations == null ? "Unlimited" : n(pl.conversations)}</td><td>${pl.channels.length ? pl.channels.map((k) => esc(KIND_LABEL[k])).join(", ") : "Website channels only"}</td>
+        <td class="num">${pl.seats == null ? "Unlimited" : pl.seats}</td><td>${pl.followups ? "Yes" : "–"}</td></tr>`).join("")}</tbody></table></div>
+      <p class="panel-body small muted">Every plan includes the website chat, agency page, call-back form, tracked links and QR codes. Changing an agency's plan takes effect immediately.</p></section>`;
 }
 
 // ───────── start ─────────
